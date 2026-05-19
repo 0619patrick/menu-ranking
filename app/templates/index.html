@@ -3,26 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>銷量對照表生成器 - 天天Authentic</title>
+<title>菜品銷量排行</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
   body { font-family: -apple-system, "PingFang TC", "Microsoft YaHei", sans-serif; }
   .shop-card { transition: all 0.2s; }
   .shop-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
-  .file-input-wrapper {
-    position: relative;
-    overflow: hidden;
-    display: inline-block;
-  }
-  .file-input-wrapper input[type=file] {
-    position: absolute;
-    left: 0;
-    top: 0;
-    opacity: 0;
-    cursor: pointer;
-    width: 100%;
-    height: 100%;
-  }
   .drop-zone {
     border: 2px dashed #cbd5e1;
     background: #f8fafc;
@@ -32,29 +18,29 @@
     border-color: #3b82f6;
     background: #eff6ff;
   }
+  .merge-detail {
+    border-left: 2px solid #e2e8f0;
+    margin-left: 2px;
+  }
 </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
 
-<div class="max-w-4xl mx-auto px-4 py-8">
+<div class="max-w-5xl mx-auto px-4 py-8">
 
   <!-- 页头 -->
   <header class="text-center mb-8">
-    <h1 class="text-3xl font-bold text-gray-900 mb-2">銷量對照表生成器</h1>
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">菜品銷量排行</h1>
     <p class="text-gray-600">上傳 POS 銷量 Excel，按菜單分類自動生成對照表</p>
   </header>
 
-  <!-- 主体卡片 -->
+  <!-- 上传卡片 -->
   <div class="bg-white rounded-xl shadow-sm p-6 md:p-8">
 
     <form id="upload-form" class="space-y-6">
 
-      <!-- 店铺列表 -->
-      <div id="shops-container" class="space-y-4">
-        <!-- 动态插入店铺卡片 -->
-      </div>
+      <div id="shops-container" class="space-y-4"></div>
 
-      <!-- 操作按钮 -->
       <div class="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
         <button type="button" id="add-shop-btn"
           class="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition flex items-center justify-center gap-2">
@@ -67,9 +53,9 @@
         <button type="submit" id="submit-btn"
           class="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
           </svg>
-          生成對照表
+          生成預覽
         </button>
       </div>
     </form>
@@ -81,7 +67,7 @@
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
         </svg>
-        <span class="text-blue-900">正在處理數據，請稍候...</span>
+        <span class="text-blue-900" id="loading-msg">正在處理數據，請稍候...</span>
       </div>
     </div>
 
@@ -90,16 +76,30 @@
       <p class="text-red-800 font-medium" id="error-msg"></p>
     </div>
 
-    <!-- 结果统计 -->
-    <div id="result-box" class="hidden mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-      <p class="text-green-900 font-semibold mb-3">✓ 已生成對照表並下載</p>
-      <div id="stats-container" class="space-y-2"></div>
-      <button type="button" id="reset-btn"
-        class="mt-4 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-sm text-gray-700">
-        再生成一次
-      </button>
-    </div>
+  </div>
 
+  <!-- 预览区 -->
+  <div id="preview-section" class="hidden mt-6">
+    <div class="bg-white rounded-xl shadow-sm p-6">
+
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-800">表格預覽</h2>
+        <button id="download-btn"
+          class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+          下載 Excel
+        </button>
+      </div>
+
+      <!-- 多店铺 tab -->
+      <div id="shop-tabs" class="hidden flex gap-1 mb-4 border-b border-gray-200"></div>
+
+      <!-- 预览内容 -->
+      <div id="preview-content"></div>
+
+    </div>
   </div>
 
   <!-- 使用说明 -->
@@ -111,27 +111,37 @@
       <p><strong>1. 上傳什麼?</strong> 從 POS 系統匯出的銷量明細 Excel (.xlsx)，需包含「項目名稱」「分類」「數量」「金額」等列。</p>
       <p><strong>2. 多家店?</strong> 點「再加一家店」可以同時處理多家店的數據，每家生成一個 sheet。</p>
       <p><strong>3. 結果?</strong> 每家店一個 sheet，左邊是按菜單分類的堂食銷量(分組內按金額降序)，右邊是 KT/FP 外賣銷量(自取分上下半段)，底部是「堂食菜單外」項目。</p>
-      <p><strong>4. 隱私?</strong> 上傳的文件僅用於即時處理，不會保存在服務器上。</p>
+      <p><strong>4. 合并項?</strong> 品名欄有 ▶ 的代表有多個 POS 寫法合并計算，點擊可展開查看各寫法的銷量明細。</p>
+      <p><strong>5. 隱私?</strong> 上傳的文件僅用於即時處理，不會保存在服務器上。</p>
     </div>
   </details>
 
   <footer class="text-center text-gray-400 text-xs mt-8">
-    天天Authentic 銷量對照表生成器
+    菜品銷量排行
   </footer>
 
 </div>
 
 <script>
 let shopCount = 0;
+let mergeCounter = 0;
 
-function createShopCard(idx, defaultName = '') {
+// ===== 工具函数 =====
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ===== 店铺卡片 =====
+
+function createShopCard(idx, defaultName) {
   return `
     <div class="shop-card border border-gray-200 rounded-lg p-4" data-idx="${idx}">
       <div class="flex items-center justify-between mb-3">
         <span class="text-sm font-medium text-gray-700">店舖 ${idx + 1}</span>
-        <button type="button" class="remove-shop-btn text-red-500 hover:text-red-700 text-sm" data-idx="${idx}">
-          移除
-        </button>
+        <button type="button" class="remove-shop-btn text-red-500 hover:text-red-700 text-sm" data-idx="${idx}">移除</button>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div class="md:col-span-1">
@@ -149,30 +159,24 @@ function createShopCard(idx, defaultName = '') {
           </div>
         </div>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 function addShop(defaultName = '') {
-  const container = document.getElementById('shops-container');
-  container.insertAdjacentHTML('beforeend', createShopCard(shopCount, defaultName));
+  document.getElementById('shops-container')
+    .insertAdjacentHTML('beforeend', createShopCard(shopCount, defaultName));
   shopCount++;
   attachShopEvents();
   updateRemoveButtons();
 }
 
 function attachShopEvents() {
-  // 移除按钮
   document.querySelectorAll('.remove-shop-btn').forEach(btn => {
     btn.onclick = function () {
-      const idx = this.getAttribute('data-idx');
-      const card = document.querySelector(`.shop-card[data-idx="${idx}"]`);
-      if (card) card.remove();
+      document.querySelector(`.shop-card[data-idx="${this.dataset.idx}"]`)?.remove();
       updateRemoveButtons();
     };
   });
-
-  // 文件输入显示名
   document.querySelectorAll('.file-input').forEach(input => {
     input.onchange = function () {
       const label = this.parentElement.querySelector('.file-label');
@@ -187,20 +191,13 @@ function attachShopEvents() {
       }
     };
   });
-
-  // 拖拽
   document.querySelectorAll('.drop-zone').forEach(zone => {
-    zone.ondragover = function (e) {
+    zone.ondragover = e => { e.preventDefault(); zone.classList.add('dragover'); };
+    zone.ondragleave = () => zone.classList.remove('dragover');
+    zone.ondrop = e => {
       e.preventDefault();
-      this.classList.add('dragover');
-    };
-    zone.ondragleave = function () {
-      this.classList.remove('dragover');
-    };
-    zone.ondrop = function (e) {
-      e.preventDefault();
-      this.classList.remove('dragover');
-      const input = this.querySelector('input[type=file]');
+      zone.classList.remove('dragover');
+      const input = zone.querySelector('input[type=file]');
       input.files = e.dataTransfer.files;
       input.dispatchEvent(new Event('change'));
     };
@@ -210,99 +207,58 @@ function attachShopEvents() {
 function updateRemoveButtons() {
   const cards = document.querySelectorAll('.shop-card');
   cards.forEach((card, i) => {
-    const removeBtn = card.querySelector('.remove-shop-btn');
-    if (cards.length === 1) {
-      removeBtn.classList.add('invisible');
-    } else {
-      removeBtn.classList.remove('invisible');
-    }
-    // 更新店舖号
+    card.querySelector('.remove-shop-btn').classList.toggle('invisible', cards.length === 1);
     const label = card.querySelector('span.text-sm');
     if (label) label.textContent = `店舖 ${i + 1}`;
   });
 }
 
-// 添加店铺按钮
 document.getElementById('add-shop-btn').onclick = () => addShop();
-
-// 初始两家店
 addShop('太古');
 addShop('沙田');
 
-// 表单提交
+// ===== FormData 构建 =====
+
+function buildFormData() {
+  const formData = new FormData();
+  let count = 0;
+  document.querySelectorAll('.shop-card').forEach(card => {
+    const idx = card.dataset.idx;
+    const nameInput = card.querySelector(`input[name="shop_name_${idx}"]`);
+    const fileInput = card.querySelector(`input[name="shop_file_${idx}"]`);
+    if (nameInput && fileInput) {
+      formData.append(`shop_name_${count}`, nameInput.value);
+      if (fileInput.files[0]) formData.append(`shop_file_${count}`, fileInput.files[0]);
+      count++;
+    }
+  });
+  formData.set('shop_count', count);
+  return formData;
+}
+
+// ===== 表单提交 → 预览 =====
+
 document.getElementById('upload-form').onsubmit = async function (e) {
   e.preventDefault();
-
   const errorBox = document.getElementById('error-box');
-  const resultBox = document.getElementById('result-box');
   const loading = document.getElementById('loading');
   const submitBtn = document.getElementById('submit-btn');
+  const previewSection = document.getElementById('preview-section');
 
   errorBox.classList.add('hidden');
-  resultBox.classList.add('hidden');
+  previewSection.classList.add('hidden');
   loading.classList.remove('hidden');
+  document.getElementById('loading-msg').textContent = '正在處理數據，請稍候...';
   submitBtn.disabled = true;
   submitBtn.classList.add('opacity-60', 'cursor-not-allowed');
 
   try {
-    const formData = new FormData(this);
-
-    // 算实际店铺数(因为可能删过中间的)
-    const cards = document.querySelectorAll('.shop-card');
-    let actualCount = 0;
-    cards.forEach(card => {
-      const idx = card.getAttribute('data-idx');
-      const nameInput = card.querySelector(`input[name="shop_name_${idx}"]`);
-      const fileInput = card.querySelector(`input[name="shop_file_${idx}"]`);
-      if (nameInput && fileInput) {
-        // 重新映射到连续的索引(后端期望 0, 1, 2, ...)
-        formData.delete(`shop_name_${idx}`);
-        formData.delete(`shop_file_${idx}`);
-        formData.append(`shop_name_${actualCount}`, nameInput.value);
-        if (fileInput.files[0]) {
-          formData.append(`shop_file_${actualCount}`, fileInput.files[0]);
-        }
-        actualCount++;
-      }
-    });
-    formData.set('shop_count', actualCount);
-
-    const resp = await fetch('/generate', {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!resp.ok) {
-      const errData = await resp.json();
-      throw new Error(errData.error || '伺服器錯誤');
-    }
-
-    // 拿到 stats
-    let stats = [];
-    try {
-      stats = JSON.parse(resp.headers.get('X-Stats') || '[]');
-    } catch (e) { }
-
-    // 下载文件
-    const blob = await resp.blob();
-    const disposition = resp.headers.get('Content-Disposition') || '';
-    let filename = '銷量對照表.xlsx';
-    const match = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^;"']+)/);
-    if (match) {
-      filename = decodeURIComponent(match[1]);
-    }
-
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-
-    // 显示统计
-    showStats(stats);
+    const resp = await fetch('/preview', { method: 'POST', body: buildFormData() });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '伺服器錯誤');
+    renderPreview(data.shops);
+    previewSection.classList.remove('hidden');
+    previewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     document.getElementById('error-msg').textContent = err.message;
     errorBox.classList.remove('hidden');
@@ -313,28 +269,242 @@ document.getElementById('upload-form').onsubmit = async function (e) {
   }
 };
 
-function showStats(stats) {
-  const container = document.getElementById('stats-container');
-  container.innerHTML = '';
-  stats.forEach(s => {
-    const card = document.createElement('div');
-    card.className = 'p-3 bg-white rounded-md border border-green-200';
-    card.innerHTML = `
-      <div class="font-medium text-gray-800 mb-2">${s.shop_name}</div>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-gray-600">
-        <div>堂食菜單內: <span class="font-semibold text-gray-900">${s.dinein_qty} 份 / ¥${s.dinein_amt.toLocaleString()}</span></div>
-        <div>堂食菜單外: <span class="font-semibold text-gray-900">${s.extras_qty} 份 / ¥${s.extras_amt.toLocaleString()}</span></div>
-        <div>外賣 (KT/FP): <span class="font-semibold text-gray-900">${s.delivery_qty} 份 / ¥${s.delivery_amt.toLocaleString()}</span></div>
-      </div>
-    `;
-    container.appendChild(card);
+// ===== 下载 Excel =====
+
+document.getElementById('download-btn').onclick = async function () {
+  const loading = document.getElementById('loading');
+  const errorBox = document.getElementById('error-box');
+  const btn = this;
+
+  errorBox.classList.add('hidden');
+  loading.classList.remove('hidden');
+  document.getElementById('loading-msg').textContent = '正在生成 Excel，請稍候...';
+  btn.disabled = true;
+  btn.classList.add('opacity-60', 'cursor-not-allowed');
+
+  try {
+    const resp = await fetch('/generate', { method: 'POST', body: buildFormData() });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error || '下載失敗');
+    }
+    const blob = await resp.blob();
+    const disposition = resp.headers.get('Content-Disposition') || '';
+    let filename = '菜品銷量排行.xlsx';
+    const match = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^;"']+)/);
+    if (match) filename = decodeURIComponent(match[1]);
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = filename;
+    document.body.appendChild(link); link.click(); link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    document.getElementById('error-msg').textContent = err.message;
+    errorBox.classList.remove('hidden');
+  } finally {
+    loading.classList.add('hidden');
+    btn.disabled = false;
+    btn.classList.remove('opacity-60', 'cursor-not-allowed');
+  }
+};
+
+// ===== 渲染预览 =====
+
+function renderPreview(shopsData) {
+  const tabsEl = document.getElementById('shop-tabs');
+  const contentEl = document.getElementById('preview-content');
+  contentEl.innerHTML = '';
+  mergeCounter = 0;
+
+  if (shopsData.length > 1) {
+    tabsEl.classList.remove('hidden');
+    tabsEl.innerHTML = shopsData.map((shop, i) => `
+      <button class="shop-tab px-4 py-2 text-sm font-medium rounded-t transition
+        ${i === 0 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
+        onclick="switchTab(${i})">${escHtml(shop.shop_name)}</button>
+    `).join('');
+  } else {
+    tabsEl.classList.add('hidden');
+  }
+
+  shopsData.forEach((shop, i) => {
+    const div = document.createElement('div');
+    div.id = `shop-tab-${i}`;
+    if (i !== 0) div.classList.add('hidden');
+    div.innerHTML = renderShopPreview(shop);
+    contentEl.appendChild(div);
   });
-  document.getElementById('result-box').classList.remove('hidden');
 }
 
-document.getElementById('reset-btn').onclick = function () {
-  document.getElementById('result-box').classList.add('hidden');
-};
+function switchTab(idx) {
+  document.querySelectorAll('[id^="shop-tab-"]').forEach((el, i) => el.classList.toggle('hidden', i !== idx));
+  document.querySelectorAll('.shop-tab').forEach((tab, i) => {
+    tab.classList.toggle('bg-blue-600', i === idx);
+    tab.classList.toggle('text-white', i === idx);
+    tab.classList.toggle('bg-gray-100', i !== idx);
+    tab.classList.toggle('text-gray-600', i !== idx);
+  });
+}
+
+function renderShopPreview(shopData) {
+  return `
+    <div class="overflow-x-auto">
+      <div class="flex gap-3 min-w-max pb-2">
+        ${renderDineinTable(shopData)}
+        <div class="w-1 self-stretch bg-gray-200 rounded flex-shrink-0"></div>
+        ${renderDeliveryTable(shopData)}
+      </div>
+    </div>`;
+}
+
+// ---- 堂食表 ----
+
+const TH  = 'px-2 py-1.5 text-center text-xs font-semibold border border-gray-300 bg-blue-200 whitespace-nowrap';
+const TD  = 'px-2 py-1 text-xs border border-gray-200 text-center align-top';
+const TDL = 'px-2 py-1 text-xs border border-gray-200 text-left align-top';
+
+function renderDineinTable(shopData) {
+  let rows = '';
+
+  shopData.tea.forEach((item, i) => {
+    rows += dineinRow(item, i + 1, i === 0 ? '茶位' : '', 'bg-yellow-50');
+  });
+
+  rows += `<tr><td colspan="7" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-blue-100">大MENU</td></tr>`;
+
+  shopData.menu.forEach(section => {
+    section.items.forEach((item, i) => {
+      rows += dineinRow(item, i + 1, i === 0 ? section.cat : '', '');
+    });
+    rows += `<tr><td colspan="7" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
+  });
+
+  if (shopData.extras.length > 0) {
+    rows += `<tr><td colspan="7" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-gray-300">堂食菜單外（POS有銷售但菜單未列）</td></tr>`;
+    shopData.extras.forEach(section => {
+      section.items.forEach((item, i) => {
+        rows += `<tr>
+          <td class="${TD} bg-gray-50 text-gray-400">${escHtml(i === 0 ? section.cat : '')}</td>
+          <td class="${TD} bg-gray-50 text-gray-400">${i + 1}</td>
+          <td class="${TDL} bg-gray-50 text-gray-400 italic min-w-[180px]">${escHtml(item.name)}</td>
+          <td class="${TD} bg-gray-50"></td>
+          <td class="${TD} bg-gray-50"></td>
+          <td class="${TD} bg-gray-50 text-gray-400">${item.qty}</td>
+          <td class="${TD} bg-gray-50 text-gray-400">${item.amt.toLocaleString()}</td>
+        </tr>`;
+      });
+      rows += `<tr><td colspan="7" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
+    });
+  }
+
+  return `<table class="border-collapse text-xs">
+    <thead><tr>
+      <th class="${TH} w-20">分類</th>
+      <th class="${TH} w-10">排序</th>
+      <th class="${TH} w-52">品名</th>
+      <th class="${TH} w-14">單位</th>
+      <th class="${TH} w-16">菜單價</th>
+      <th class="${TH} w-12">數量</th>
+      <th class="${TH} w-16">金額</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function dineinRow(item, rank, catLabel, bgClass) {
+  let nameCell;
+  if (item.merged && item.merged.length > 1) {
+    const id = 'mg' + (++mergeCounter);
+    const variantsHtml = item.merged.map(v =>
+      `<div class="flex items-start justify-between gap-2 py-0.5">
+        <span class="text-gray-300">└</span>
+        <span class="flex-1 text-gray-500">${escHtml(v.name)}</span>
+        <span class="text-gray-400 whitespace-nowrap">${v.qty}份 ¥${v.amt.toLocaleString()}</span>
+      </div>`
+    ).join('');
+    nameCell = `
+      <div class="flex items-start gap-1">
+        <button class="text-blue-500 hover:text-blue-700 flex-shrink-0 text-xs leading-4 mt-0.5"
+          onclick="toggleMerge(this,'${id}')">▶</button>
+        <span>${escHtml(item.name)}</span>
+      </div>
+      <div id="${id}" class="hidden mt-1 pl-1 text-xs merge-detail">
+        ${variantsHtml}
+      </div>`;
+  } else {
+    nameCell = escHtml(item.name);
+  }
+
+  const bg = bgClass || '';
+  return `<tr>
+    <td class="${TD} ${bg}">${escHtml(catLabel)}</td>
+    <td class="${TD} ${bg}">${rank}</td>
+    <td class="${TDL} ${bg} min-w-[180px] max-w-[240px]">${nameCell}</td>
+    <td class="${TD} ${bg}">${escHtml(item.unit || '')}</td>
+    <td class="${TD} ${bg}">${item.price ? '¥' + item.price : ''}</td>
+    <td class="${TD} ${bg}">${item.qty}</td>
+    <td class="${TD} ${bg}">${item.amt ? item.amt.toLocaleString() : '0'}</td>
+  </tr>`;
+}
+
+// ---- 外卖表 ----
+
+function renderDeliveryTable(shopData) {
+  const DTH = 'px-2 py-1.5 text-center text-xs font-semibold border border-gray-300 bg-gray-500 text-white whitespace-nowrap';
+  const DTD = 'px-2 py-1 text-xs border border-gray-200 text-center bg-amber-50 align-top';
+  const DTDL = 'px-2 py-1 text-xs border border-gray-200 text-left bg-amber-50 align-top';
+
+  let rows = '';
+  shopData.dlv_normal.forEach(section => {
+    section.items.forEach((item, i) => {
+      rows += `<tr>
+        <td class="${DTD}">${escHtml(i === 0 ? section.cat : '')}</td>
+        <td class="${DTD}">${i + 1}</td>
+        <td class="${DTDL} min-w-[160px]">${escHtml(item.name)}</td>
+        <td class="${DTD}">${item.qty}</td>
+        <td class="${DTD}">${item.amt.toLocaleString()}</td>
+      </tr>`;
+    });
+    rows += `<tr><td colspan="5" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
+  });
+
+  if (shopData.dlv_selftake.length > 0) {
+    rows += `<tr><td colspan="5" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-gray-500 text-white">─── 自取 ───</td></tr>`;
+    shopData.dlv_selftake.forEach(section => {
+      section.items.forEach((item, i) => {
+        rows += `<tr>
+          <td class="${DTD}">${escHtml(i === 0 ? section.cat : '')}</td>
+          <td class="${DTD}">${i + 1}</td>
+          <td class="${DTDL} min-w-[160px]">${escHtml(item.name)}</td>
+          <td class="${DTD}">${item.qty}</td>
+          <td class="${DTD}">${item.amt.toLocaleString()}</td>
+        </tr>`;
+      });
+      rows += `<tr><td colspan="5" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
+    });
+  }
+
+  return `<table class="border-collapse text-xs">
+    <thead><tr>
+      <th class="${DTH} w-36">外賣分類</th>
+      <th class="${DTH} w-10">排序</th>
+      <th class="${DTH} w-44">品名</th>
+      <th class="${DTH} w-12">數量</th>
+      <th class="${DTH} w-16">金額</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// ===== 合并展开 =====
+
+function toggleMerge(btn, id) {
+  const detail = document.getElementById(id);
+  const isHidden = detail.classList.contains('hidden');
+  detail.classList.toggle('hidden', !isHidden);
+  btn.textContent = isHidden ? '▼' : '▶';
+}
+
 </script>
 
 </body>

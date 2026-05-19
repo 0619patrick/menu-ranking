@@ -10,7 +10,7 @@ from flask import Flask, render_template, request, send_file, jsonify
 from werkzeug.utils import secure_filename
 from datetime import datetime
 
-from app.processors.transformer import generate_excel, get_stats
+from app.processors.transformer import generate_excel, get_stats, build_preview_data, load_source
 
 app = Flask(__name__,
             template_folder='app/templates',
@@ -94,6 +94,42 @@ def generate():
 
     except Exception as e:
         return jsonify({'error': f'处理出错: {str(e)}'}), 500
+
+
+@app.route('/preview', methods=['POST'])
+def preview():
+    try:
+        shop_count = int(request.form.get('shop_count', 0))
+        if shop_count < 1:
+            return jsonify({'error': '至少需要 1 個店鋪'}), 400
+
+        shops_data = []
+        for i in range(shop_count):
+            shop_name = request.form.get(f'shop_name_{i}', '').strip()
+            file = request.files.get(f'shop_file_{i}')
+
+            if not shop_name:
+                return jsonify({'error': f'第 {i+1} 個店鋪名不能為空'}), 400
+            if not file or file.filename == '':
+                return jsonify({'error': f'店鋪「{shop_name}」未選擇文件'}), 400
+            if not allowed_file(file.filename):
+                return jsonify({'error': f'店鋪「{shop_name}」文件格式不支持（只支持 .xlsx / .xls）'}), 400
+
+            file_bytes = file.read()
+            try:
+                src = load_source(io.BytesIO(file_bytes))
+                data = build_preview_data(shop_name, src)
+                shops_data.append(data)
+            except Exception as e:
+                return jsonify({
+                    'error': f'店鋪「{shop_name}」解析失敗: {str(e)}。'
+                             '請確認文件包含「項目名稱」「分類」「數量」「金額」等列。'
+                }), 400
+
+        return jsonify({'shops': shops_data})
+
+    except Exception as e:
+        return jsonify({'error': f'處理出錯: {str(e)}'}), 500
 
 
 @app.route('/health')

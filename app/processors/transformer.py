@@ -77,6 +77,21 @@ def build_dinein_extras(src, used_names):
     return extras
 
 
+def get_dinein_sales_detail(name_list, src):
+    """堂食销量，按每个 POS 变体分开返回 (total_qty, total_amt, variants)"""
+    variants = []
+    for pn in name_list:
+        matched = src[
+            (src['项目名称'] == pn) &
+            (~src['分类'].str.contains('KT|FP', na=False, regex=True))
+        ]
+        q = int(matched['数量'].sum())
+        a = int(matched['金额'].sum())
+        if q != 0 or a != 0:
+            variants.append({'name': pn, 'qty': q, 'amt': a})
+    return sum(v['qty'] for v in variants), sum(v['amt'] for v in variants), variants
+
+
 def build_delivery(src):
     """收集所有 KT/FP 分类的项目, 按分类组织"""
     delivery = src[src['分类'].str.contains('KT|FP', na=False, regex=True)]
@@ -294,6 +309,61 @@ def build_sheet(ws, shop_name, src):
         ws.merge_cells(mr)
         first_cell = mr.split(':')[0]
         ws[first_cell].alignment = CENTER
+
+
+def build_preview_data(shop_name, src):
+    """构建预览用结构化数据（供前端渲染表格）"""
+    used_names = collect_used_names()
+
+    tea_cat, tea_items_raw = MENU[0]
+    tea_rows = []
+    for name, price, unit, pos_names in tea_items_raw:
+        q, a, variants = get_dinein_sales_detail(pos_names, src)
+        tea_rows.append({'name': name, 'price': price, 'unit': unit,
+                         'qty': q, 'amt': a,
+                         'merged': variants if len(variants) > 1 else []})
+
+    menu_sections = []
+    for cat, items_raw in MENU[1:]:
+        rows = []
+        for name, price, unit, pos_names in items_raw:
+            q, a, variants = get_dinein_sales_detail(pos_names, src)
+            rows.append({'name': name, 'price': price, 'unit': unit,
+                         'qty': q, 'amt': a,
+                         'merged': variants if len(variants) > 1 else []})
+        rows.sort(key=lambda x: -x['amt'])
+        menu_sections.append({'cat': cat, 'items': rows})
+
+    extras = build_dinein_extras(src, used_names)
+    extras_sections = [
+        {'cat': c, 'items': [{'name': n, 'qty': q, 'amt': a} for n, q, a in extras[c]]}
+        for c in sorted(extras, key=lambda c: -sum(x[2] for x in extras[c]))
+    ]
+
+    delivery = build_delivery(src)
+    normal_cats = [c for c in delivery if '自取' not in c]
+    self_take_cats = [c for c in delivery if '自取' in c]
+    normal_kt = sorted([c for c in normal_cats if c.startswith('KT')],
+                       key=lambda c: -sum(x[2] for x in delivery[c]))
+    normal_fp = sorted([c for c in normal_cats if c.startswith('FP')],
+                       key=lambda c: -sum(x[2] for x in delivery[c]))
+    st_kt = sorted([c for c in self_take_cats if c.startswith('KT')],
+                   key=lambda c: -sum(x[2] for x in delivery[c]))
+    st_fp = sorted([c for c in self_take_cats if c.startswith('FP')],
+                   key=lambda c: -sum(x[2] for x in delivery[c]))
+
+    def dlv_section(cat):
+        return {'cat': cat,
+                'items': [{'name': n, 'qty': q, 'amt': a} for n, q, a in delivery[cat]]}
+
+    return {
+        'shop_name': shop_name,
+        'tea': tea_rows,
+        'menu': menu_sections,
+        'extras': extras_sections,
+        'dlv_normal': [dlv_section(c) for c in normal_kt + normal_fp],
+        'dlv_selftake': [dlv_section(c) for c in st_kt + st_fp],
+    }
 
 
 def generate_excel(shop_files):
