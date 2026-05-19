@@ -244,12 +244,16 @@ document.getElementById('add-shop-btn').onclick = () => addShop();
 
 const QS_STORES = {
   '香港': [
-    { label: '銅鑼灣', name: '香港天天銅鑼灣' },
-    { label: '圓方',   name: '香港天天圓方'   },
-    { label: '沙田',   name: '香港天天沙田'    },
-    { label: '太古城', name: '香港天天太古城'  },
+    { label: '銅鑼灣（美團）', name: '香港天天銅鑼灣' },
+    { label: '圓方（美團）',   name: '香港天天圓方'   },
+    { label: '沙田（餐飲王）',   name: '香港天天沙田'    },
+    { label: '太古城（餐飲王）', name: '香港天天太古城'  },
   ],
-  '内地': [],
+  '内地': [
+    { label: '海口天天', name: '海口天天' },
+    { label: '南京天天', name: '南京天天' },
+    { label: '上海天天', name: '上海天天' },
+  ],
 };
 
 let qsBrand = false;
