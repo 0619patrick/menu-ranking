@@ -39,6 +39,31 @@
 
     <form id="upload-form" class="space-y-6">
 
+      <!-- 快速选店 -->
+      <div class="pb-4 border-b border-gray-100">
+        <p class="text-xs text-gray-400 font-medium mb-2">快速選擇門店</p>
+        <!-- 第一级：品牌 -->
+        <div class="flex gap-2 flex-wrap">
+          <button type="button" id="qs-brand-btn" onclick="qsToggleBrand()"
+            class="px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition">
+            天天 <span id="qs-brand-arrow">▾</span>
+          </button>
+        </div>
+        <!-- 第二级：地区 -->
+        <div id="qs-region-panel" class="hidden mt-2 flex gap-2 flex-wrap items-center">
+          <span class="text-xs text-gray-300">▸</span>
+          <button type="button" onclick="qsSelectRegion('香港')" id="qs-btn-hk"
+            class="qs-region-btn px-3 py-1.5 text-sm rounded-full border transition">香港</button>
+          <button type="button" onclick="qsSelectRegion('内地')" id="qs-btn-cn"
+            class="qs-region-btn px-3 py-1.5 text-sm rounded-full border transition">内地</button>
+        </div>
+        <!-- 第三级：门店 -->
+        <div id="qs-store-panel" class="hidden mt-2 flex gap-2 flex-wrap items-center">
+          <span class="text-xs text-gray-300">▸</span>
+          <!-- 由 JS 渲染 -->
+        </div>
+      </div>
+
       <div id="shops-container" class="space-y-4"></div>
 
       <div class="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
@@ -214,8 +239,111 @@ function updateRemoveButtons() {
 }
 
 document.getElementById('add-shop-btn').onclick = () => addShop();
-addShop('太古');
-addShop('沙田');
+
+// ===== 快速选店 =====
+
+const QS_STORES = {
+  '香港': [
+    { label: '銅鑼灣', name: '香港天天銅鑼灣' },
+    { label: '圓方',   name: '香港天天圓方'   },
+    { label: '沙田',   name: '香港天天沙田'    },
+    { label: '太古城', name: '香港天天太古城'  },
+  ],
+  '内地': [],
+};
+
+let qsBrand = false;
+let qsRegion = null;
+
+function qsToggleBrand() {
+  qsBrand = !qsBrand;
+  if (!qsBrand) qsRegion = null;
+  qsRender();
+}
+
+function qsSelectRegion(region) {
+  qsRegion = qsRegion === region ? null : region;
+  qsRender();
+}
+
+function qsToggleStore(shopName) {
+  const cards = document.querySelectorAll('.shop-card');
+  let found = null;
+  cards.forEach(card => {
+    const idx = card.dataset.idx;
+    const input = card.querySelector(`input[name="shop_name_${idx}"]`);
+    if (input && input.value === shopName) found = card;
+  });
+  if (found) {
+    found.remove();
+    updateRemoveButtons();
+  } else {
+    addShop(shopName);
+  }
+  qsRender();
+}
+
+function qsIsSelected(shopName) {
+  let found = false;
+  document.querySelectorAll('.shop-card').forEach(card => {
+    const idx = card.dataset.idx;
+    const input = card.querySelector(`input[name="shop_name_${idx}"]`);
+    if (input && input.value === shopName) found = true;
+  });
+  return found;
+}
+
+function qsRender() {
+  const brandBtn = document.getElementById('qs-brand-btn');
+  const regionPanel = document.getElementById('qs-region-panel');
+  const storePanel = document.getElementById('qs-store-panel');
+  const arrow = document.getElementById('qs-brand-arrow');
+
+  // 品牌按钮状态
+  if (qsBrand) {
+    brandBtn.classList.add('border-blue-500', 'text-blue-600', 'bg-blue-50');
+    brandBtn.classList.remove('border-gray-300', 'text-gray-600');
+    arrow.textContent = '▴';
+  } else {
+    brandBtn.classList.remove('border-blue-500', 'text-blue-600', 'bg-blue-50');
+    brandBtn.classList.add('border-gray-300', 'text-gray-600');
+    arrow.textContent = '▾';
+  }
+
+  // 地区面板
+  regionPanel.classList.toggle('hidden', !qsBrand);
+  ['香港', '内地'].forEach(r => {
+    const btn = document.getElementById('qs-btn-' + (r === '香港' ? 'hk' : 'cn'));
+    if (!btn) return;
+    if (qsRegion === r) {
+      btn.className = 'qs-region-btn px-3 py-1.5 text-sm rounded-full border border-blue-500 bg-blue-600 text-white transition';
+    } else {
+      btn.className = 'qs-region-btn px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition';
+    }
+  });
+
+  // 门店面板
+  const stores = qsRegion ? QS_STORES[qsRegion] : [];
+  storePanel.classList.toggle('hidden', !qsRegion);
+  if (qsRegion) {
+    if (stores.length === 0) {
+      storePanel.innerHTML = '<span class="text-xs text-gray-300">▸</span><span class="text-xs text-gray-400">暫無門店</span>';
+    } else {
+      const arrow = '<span class="text-xs text-gray-300">▸</span>';
+      const btns = stores.map(s => {
+        const selected = qsIsSelected(s.name);
+        const cls = selected
+          ? 'px-3 py-1.5 text-sm rounded-full border border-blue-500 bg-blue-600 text-white transition'
+          : 'px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition';
+        return `<button type="button" onclick="qsToggleStore('${s.name}')" class="${cls}">${s.label}</button>`;
+      }).join('');
+      storePanel.innerHTML = arrow + btns;
+    }
+  }
+}
+
+addShop('香港天天太古城');
+addShop('香港天天沙田');
 
 // ===== FormData 构建 =====
 
@@ -370,17 +498,17 @@ function renderDineinTable(shopData) {
     rows += dineinRow(item, i + 1, i === 0 ? '茶位' : '', 'bg-yellow-50');
   });
 
-  rows += `<tr><td colspan="7" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-blue-100">大MENU</td></tr>`;
+  rows += `<tr><td colspan="6" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-blue-100">大MENU</td></tr>`;
 
   shopData.menu.forEach(section => {
     section.items.forEach((item, i) => {
       rows += dineinRow(item, i + 1, i === 0 ? section.cat : '', '');
     });
-    rows += `<tr><td colspan="7" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
+    rows += `<tr><td colspan="6" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
   });
 
   if (shopData.extras.length > 0) {
-    rows += `<tr><td colspan="7" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-gray-300">堂食菜單外（POS有銷售但菜單未列）</td></tr>`;
+    rows += `<tr><td colspan="6" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-gray-300">堂食菜單外（POS有銷售但菜單未列）</td></tr>`;
     shopData.extras.forEach(section => {
       section.items.forEach((item, i) => {
         rows += `<tr>
@@ -388,12 +516,11 @@ function renderDineinTable(shopData) {
           <td class="${TD} bg-gray-50 text-gray-400">${i + 1}</td>
           <td class="${TDL} bg-gray-50 text-gray-400 italic min-w-[180px]">${escHtml(item.name)}</td>
           <td class="${TD} bg-gray-50"></td>
-          <td class="${TD} bg-gray-50"></td>
           <td class="${TD} bg-gray-50 text-gray-400">${item.qty}</td>
           <td class="${TD} bg-gray-50 text-gray-400">${item.amt.toLocaleString()}</td>
         </tr>`;
       });
-      rows += `<tr><td colspan="7" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
+      rows += `<tr><td colspan="6" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
     });
   }
 
@@ -403,7 +530,6 @@ function renderDineinTable(shopData) {
       <th class="${TH} w-10">排序</th>
       <th class="${TH} w-52">品名</th>
       <th class="${TH} w-14">單位</th>
-      <th class="${TH} w-16">菜單價</th>
       <th class="${TH} w-12">數量</th>
       <th class="${TH} w-16">金額</th>
     </tr></thead>
@@ -441,7 +567,6 @@ function dineinRow(item, rank, catLabel, bgClass) {
     <td class="${TD} ${bg}">${rank}</td>
     <td class="${TDL} ${bg} min-w-[180px] max-w-[240px]">${nameCell}</td>
     <td class="${TD} ${bg}">${escHtml(item.unit || '')}</td>
-    <td class="${TD} ${bg}">${item.price ? '¥' + item.price : ''}</td>
     <td class="${TD} ${bg}">${item.qty}</td>
     <td class="${TD} ${bg}">${item.amt ? item.amt.toLocaleString() : '0'}</td>
   </tr>`;
