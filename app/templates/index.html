@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>銷量對照表生成器 - 天天Authentic</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "PingFang TC", "Microsoft YaHei", sans-serif; }
+  .shop-card { transition: all 0.2s; }
+  .shop-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+  .file-input-wrapper {
+    position: relative;
+    overflow: hidden;
+    display: inline-block;
+  }
+  .file-input-wrapper input[type=file] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .drop-zone {
+    border: 2px dashed #cbd5e1;
+    background: #f8fafc;
+    transition: all 0.2s;
+  }
+  .drop-zone.dragover {
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<div class="max-w-4xl mx-auto px-4 py-8">
+
+  <!-- 页头 -->
+  <header class="text-center mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">銷量對照表生成器</h1>
+    <p class="text-gray-600">上傳 POS 銷量 Excel，按菜單分類自動生成對照表</p>
+  </header>
+
+  <!-- 主体卡片 -->
+  <div class="bg-white rounded-xl shadow-sm p-6 md:p-8">
+
+    <form id="upload-form" class="space-y-6">
+
+      <!-- 店铺列表 -->
+      <div id="shops-container" class="space-y-4">
+        <!-- 动态插入店铺卡片 -->
+      </div>
+
+      <!-- 操作按钮 -->
+      <div class="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
+        <button type="button" id="add-shop-btn"
+          class="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition flex items-center justify-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+          </svg>
+          再加一家店
+        </button>
+
+        <button type="submit" id="submit-btn"
+          class="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition flex items-center justify-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+          </svg>
+          生成對照表
+        </button>
+      </div>
+    </form>
+
+    <!-- 进度提示 -->
+    <div id="loading" class="hidden mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+      <div class="flex items-center gap-3">
+        <svg class="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        <span class="text-blue-900">正在處理數據，請稍候...</span>
+      </div>
+    </div>
+
+    <!-- 错误提示 -->
+    <div id="error-box" class="hidden mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+      <p class="text-red-800 font-medium" id="error-msg"></p>
+    </div>
+
+    <!-- 结果统计 -->
+    <div id="result-box" class="hidden mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+      <p class="text-green-900 font-semibold mb-3">✓ 已生成對照表並下載</p>
+      <div id="stats-container" class="space-y-2"></div>
+      <button type="button" id="reset-btn"
+        class="mt-4 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-sm text-gray-700">
+        再生成一次
+      </button>
+    </div>
+
+  </div>
+
+  <!-- 使用说明 -->
+  <details class="mt-6 bg-white rounded-xl shadow-sm">
+    <summary class="px-6 py-4 cursor-pointer font-medium text-gray-700 hover:bg-gray-50 rounded-xl">
+      使用說明
+    </summary>
+    <div class="px-6 pb-6 text-sm text-gray-600 space-y-2">
+      <p><strong>1. 上傳什麼?</strong> 從 POS 系統匯出的銷量明細 Excel (.xlsx)，需包含「項目名稱」「分類」「數量」「金額」等列。</p>
+      <p><strong>2. 多家店?</strong> 點「再加一家店」可以同時處理多家店的數據，每家生成一個 sheet。</p>
+      <p><strong>3. 結果?</strong> 每家店一個 sheet，左邊是按菜單分類的堂食銷量(分組內按金額降序)，右邊是 KT/FP 外賣銷量(自取分上下半段)，底部是「堂食菜單外」項目。</p>
+      <p><strong>4. 隱私?</strong> 上傳的文件僅用於即時處理，不會保存在服務器上。</p>
+    </div>
+  </details>
+
+  <footer class="text-center text-gray-400 text-xs mt-8">
+    天天Authentic 銷量對照表生成器
+  </footer>
+
+</div>
+
+<script>
+let shopCount = 0;
+
+function createShopCard(idx, defaultName = '') {
+  return `
+    <div class="shop-card border border-gray-200 rounded-lg p-4" data-idx="${idx}">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-medium text-gray-700">店舖 ${idx + 1}</span>
+        <button type="button" class="remove-shop-btn text-red-500 hover:text-red-700 text-sm" data-idx="${idx}">
+          移除
+        </button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="md:col-span-1">
+          <label class="block text-xs text-gray-500 mb-1">店舖名稱</label>
+          <input type="text" name="shop_name_${idx}" value="${defaultName}"
+            placeholder="例: 太古" required
+            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs text-gray-500 mb-1">POS 數據文件 (.xlsx)</label>
+          <div class="drop-zone rounded-md p-3 text-center cursor-pointer relative">
+            <input type="file" name="shop_file_${idx}" accept=".xlsx,.xls" required
+              class="absolute inset-0 w-full h-full opacity-0 cursor-pointer file-input">
+            <p class="text-sm text-gray-500 pointer-events-none file-label">點擊選擇文件或拖放至此</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function addShop(defaultName = '') {
+  const container = document.getElementById('shops-container');
+  container.insertAdjacentHTML('beforeend', createShopCard(shopCount, defaultName));
+  shopCount++;
+  attachShopEvents();
+  updateRemoveButtons();
+}
+
+function attachShopEvents() {
+  // 移除按钮
+  document.querySelectorAll('.remove-shop-btn').forEach(btn => {
+    btn.onclick = function () {
+      const idx = this.getAttribute('data-idx');
+      const card = document.querySelector(`.shop-card[data-idx="${idx}"]`);
+      if (card) card.remove();
+      updateRemoveButtons();
+    };
+  });
+
+  // 文件输入显示名
+  document.querySelectorAll('.file-input').forEach(input => {
+    input.onchange = function () {
+      const label = this.parentElement.querySelector('.file-label');
+      if (this.files.length > 0) {
+        label.textContent = '✓ ' + this.files[0].name;
+        label.classList.add('text-green-600', 'font-medium');
+        label.classList.remove('text-gray-500');
+      } else {
+        label.textContent = '點擊選擇文件或拖放至此';
+        label.classList.remove('text-green-600', 'font-medium');
+        label.classList.add('text-gray-500');
+      }
+    };
+  });
+
+  // 拖拽
+  document.querySelectorAll('.drop-zone').forEach(zone => {
+    zone.ondragover = function (e) {
+      e.preventDefault();
+      this.classList.add('dragover');
+    };
+    zone.ondragleave = function () {
+      this.classList.remove('dragover');
+    };
+    zone.ondrop = function (e) {
+      e.preventDefault();
+      this.classList.remove('dragover');
+      const input = this.querySelector('input[type=file]');
+      input.files = e.dataTransfer.files;
+      input.dispatchEvent(new Event('change'));
+    };
+  });
+}
+
+function updateRemoveButtons() {
+  const cards = document.querySelectorAll('.shop-card');
+  cards.forEach((card, i) => {
+    const removeBtn = card.querySelector('.remove-shop-btn');
+    if (cards.length === 1) {
+      removeBtn.classList.add('invisible');
+    } else {
+      removeBtn.classList.remove('invisible');
+    }
+    // 更新店舖号
+    const label = card.querySelector('span.text-sm');
+    if (label) label.textContent = `店舖 ${i + 1}`;
+  });
+}
+
+// 添加店铺按钮
+document.getElementById('add-shop-btn').onclick = () => addShop();
+
+// 初始两家店
+addShop('太古');
+addShop('沙田');
+
+// 表单提交
+document.getElementById('upload-form').onsubmit = async function (e) {
+  e.preventDefault();
+
+  const errorBox = document.getElementById('error-box');
+  const resultBox = document.getElementById('result-box');
+  const loading = document.getElementById('loading');
+  const submitBtn = document.getElementById('submit-btn');
+
+  errorBox.classList.add('hidden');
+  resultBox.classList.add('hidden');
+  loading.classList.remove('hidden');
+  submitBtn.disabled = true;
+  submitBtn.classList.add('opacity-60', 'cursor-not-allowed');
+
+  try {
+    const formData = new FormData(this);
+
+    // 算实际店铺数(因为可能删过中间的)
+    const cards = document.querySelectorAll('.shop-card');
+    let actualCount = 0;
+    cards.forEach(card => {
+      const idx = card.getAttribute('data-idx');
+      const nameInput = card.querySelector(`input[name="shop_name_${idx}"]`);
+      const fileInput = card.querySelector(`input[name="shop_file_${idx}"]`);
+      if (nameInput && fileInput) {
+        // 重新映射到连续的索引(后端期望 0, 1, 2, ...)
+        formData.delete(`shop_name_${idx}`);
+        formData.delete(`shop_file_${idx}`);
+        formData.append(`shop_name_${actualCount}`, nameInput.value);
+        if (fileInput.files[0]) {
+          formData.append(`shop_file_${actualCount}`, fileInput.files[0]);
+        }
+        actualCount++;
+      }
+    });
+    formData.set('shop_count', actualCount);
+
+    const resp = await fetch('/generate', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!resp.ok) {
+      const errData = await resp.json();
+      throw new Error(errData.error || '伺服器錯誤');
+    }
+
+    // 拿到 stats
+    let stats = [];
+    try {
+      stats = JSON.parse(resp.headers.get('X-Stats') || '[]');
+    } catch (e) { }
+
+    // 下载文件
+    const blob = await resp.blob();
+    const disposition = resp.headers.get('Content-Disposition') || '';
+    let filename = '銷量對照表.xlsx';
+    const match = disposition.match(/filename\*?=(?:UTF-8'')?["']?([^;"']+)/);
+    if (match) {
+      filename = decodeURIComponent(match[1]);
+    }
+
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+
+    // 显示统计
+    showStats(stats);
+  } catch (err) {
+    document.getElementById('error-msg').textContent = err.message;
+    errorBox.classList.remove('hidden');
+  } finally {
+    loading.classList.add('hidden');
+    submitBtn.disabled = false;
+    submitBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+  }
+};
+
+function showStats(stats) {
+  const container = document.getElementById('stats-container');
+  container.innerHTML = '';
+  stats.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'p-3 bg-white rounded-md border border-green-200';
+    card.innerHTML = `
+      <div class="font-medium text-gray-800 mb-2">${s.shop_name}</div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm text-gray-600">
+        <div>堂食菜單內: <span class="font-semibold text-gray-900">${s.dinein_qty} 份 / ¥${s.dinein_amt.toLocaleString()}</span></div>
+        <div>堂食菜單外: <span class="font-semibold text-gray-900">${s.extras_qty} 份 / ¥${s.extras_amt.toLocaleString()}</span></div>
+        <div>外賣 (KT/FP): <span class="font-semibold text-gray-900">${s.delivery_qty} 份 / ¥${s.delivery_amt.toLocaleString()}</span></div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+  document.getElementById('result-box').classList.remove('hidden');
+}
+
+document.getElementById('reset-btn').onclick = function () {
+  document.getElementById('result-box').classList.add('hidden');
+};
+</script>
+
+</body>
+</html>
