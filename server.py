@@ -1,16 +1,30 @@
 """
 Flask Web 服务入口
-功能:
-- GET  /          首页, 上传表单
-- POST /generate  接收上传, 生成对照表, 返回下载
+
+路由:
+- GET  /         首页, 上传表单
+- POST /preview  返回 JSON 预览数据
+- POST /generate 接收上传, 生成对照表, 返回下载
+- GET  /health   健康检查
+
+每家店上传时需要带 3 个信息:
+- shop_name_N        店铺名称
+- shop_file_N        POS 导出的 Excel 文件
+- restaurant_type_N  餐厅类型 key（决定加载哪份菜单）
+- pos_type_N         POS 平台 key（决定用哪个适配器）
+
+后两个如果缺省，会回退到 'tiantian' / 'canyinwang'（保持向后兼容）。
 """
 import os
 import io
-from flask import Flask, render_template, request, send_file, jsonify
-from werkzeug.utils import secure_filename
+import json
 from datetime import datetime
+from flask import Flask, render_template, request, send_file, jsonify
 
-from app.processors.transformer import generate_excel, get_stats, build_preview_data, load_source
+from app.processors.transformer import (
+    generate_excel, compute_stats, build_preview_data, load_source, apply_deletions,
+)
+from app.menus import get_menu
 
 app = Flask(__name__,
             template_folder='app/templates',
@@ -19,9 +33,65 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB 上限
 
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 
+# 缺省值（兼容旧前端 / 手动加店时）
+DEFAULT_RESTAURANT = 'tiantian'
+DEFAULT_POS = 'canyinwang'
+
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _read_shop_specs(req):
+    """
+    从 form 里读出每家店的 (shop_name, file_bytes, restaurant_type, pos_type)。
+    如果任何一步失败，抛出 ValueError(message)。
+    """
+    try:
+        shop_count = int(req.form.get('shop_count', 0))
+    except (TypeError, ValueError):
+        raise ValueError('shop_count 必须是整数')
+
+    if shop_count < 1:
+        raise ValueError('至少需要 1 個店鋪')
+
+    specs = []
+    for i in range(shop_count):
+        shop_name = req.form.get(f'shop_name_{i}', '').strip()
+        file = req.files.get(f'shop_file_{i}')
+        restaurant_type = req.form.get(f'restaurant_type_{i}', DEFAULT_RESTAURANT).strip() or DEFAULT_RESTAURANT
+        pos_type = req.form.get(f'pos_type_{i}', DEFAULT_POS).strip() or DEFAULT_POS
+
+        if not shop_name:
+            raise ValueError(f'第 {i+1} 個店鋪名不能為空')
+        if not file or file.filename == '':
+            raise ValueError(f'店鋪「{shop_name}」未選擇文件')
+        if not allowed_file(file.filename):
+            raise ValueError(f'店鋪「{shop_name}」文件格式不支持（只支持 .xlsx / .xls）')
+
+        # 提前验证 restaurant_type / pos_type 是否已配置
+        try:
+            get_menu(restaurant_type)
+        except ValueError as e:
+            raise ValueError(f'店鋪「{shop_name}」: {e}')
+
+        # 前端 ▶ 里点 × 删的变体行（仅 /generate 用；/preview 不发也没影响）
+        deletions_raw = req.form.get(f'deletions_{i}', '').strip()
+        deletions = []
+        if deletions_raw:
+            try:
+                deletions = json.loads(deletions_raw) or []
+            except json.JSONDecodeError:
+                deletions = []
+
+        specs.append({
+            'shop_name': shop_name,
+            'file_bytes': file.read(),
+            'restaurant_type': restaurant_type,
+            'pos_type': pos_type,
+            'deletions': deletions,
+        })
+    return specs
 
 
 @app.route('/')
@@ -31,105 +101,73 @@ def index():
 
 @app.route('/generate', methods=['POST'])
 def generate():
-    """
-    接收上传的店铺文件, 生成对照表
-    表单字段:
-      shop_count: 店铺数量(整数)
-      shop_name_0, shop_file_0, shop_name_1, shop_file_1, ...
-    """
     try:
-        shop_count = int(request.form.get('shop_count', 0))
-        if shop_count < 1:
-            return jsonify({'error': '至少需要 1 个店铺'}), 400
-
-        shop_files = []
-        stats_summary = []
-
-        for i in range(shop_count):
-            shop_name = request.form.get(f'shop_name_{i}', '').strip()
-            file = request.files.get(f'shop_file_{i}')
-
-            if not shop_name:
-                return jsonify({'error': f'第 {i+1} 个店铺名不能为空'}), 400
-            if not file or file.filename == '':
-                return jsonify({'error': f'店铺「{shop_name}」未选择文件'}), 400
-            if not allowed_file(file.filename):
-                return jsonify({'error': f'店铺「{shop_name}」的文件格式不支持(只支持 .xlsx / .xls)'}), 400
-
-            # 读到内存 (因为 generate_excel 和 get_stats 都要用一次)
-            file_bytes = file.read()
-            shop_files.append((shop_name, io.BytesIO(file_bytes)))
-
-            # 统计
-            try:
-                s = get_stats(io.BytesIO(file_bytes))
-                s['shop_name'] = shop_name
-                stats_summary.append(s)
-            except Exception as e:
-                return jsonify({
-                    'error': f'店铺「{shop_name}」的文件解析失败: {str(e)}。'
-                             '请确认文件包含「项目名称」「分类」「数量」「金额」等列。'
-                }), 400
-
-        # 生成 Excel
-        excel_io = generate_excel(shop_files)
-
-        # 拼下载文件名
-        today = datetime.now().strftime('%Y%m%d')
-        filename = f'銷量對照表_{today}.xlsx'
-
-        response = send_file(
-            excel_io,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=filename,
-        )
-
-        # 把统计信息塞进响应头(前端可读)
-        import json
-        response.headers['X-Stats'] = json.dumps(stats_summary, ensure_ascii=True)
-        response.headers['Access-Control-Expose-Headers'] = 'X-Stats, Content-Disposition'
-
-        return response
-
+        specs = _read_shop_specs(request)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'error': f'处理出错: {str(e)}'}), 500
+        return jsonify({'error': f'处理出错: {e}'}), 500
+
+    # 每家店只解析一次, Excel 和 stats 共享同一份 DataFrame
+    parsed = []
+    for s in specs:
+        try:
+            src = load_source(io.BytesIO(s['file_bytes']), s['pos_type'])
+            src = apply_deletions(src, s['deletions'])   # 用户手动删的行
+            menu = get_menu(s['restaurant_type'])
+        except Exception as e:
+            return jsonify({'error': f'店铺「{s["shop_name"]}」解析失败: {e}'}), 400
+        parsed.append((s['shop_name'], src, menu))
+
+    try:
+        excel_io = generate_excel(parsed)
+    except Exception as e:
+        return jsonify({'error': f'生成 Excel 失败: {e}'}), 400
+
+    stats_summary = []
+    for shop_name, src, menu in parsed:
+        try:
+            stat = compute_stats(src, menu, shop_name=shop_name)
+            stat['shop_name'] = shop_name
+            stats_summary.append(stat)
+        except Exception as e:
+            return jsonify({'error': f'店铺「{shop_name}」统计失败: {e}'}), 400
+
+    today = datetime.now().strftime('%Y%m%d')
+    filename = f'銷量對照表_{today}.xlsx'
+
+    response = send_file(
+        excel_io,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename,
+    )
+    response.headers['X-Stats'] = json.dumps(stats_summary, ensure_ascii=True)
+    response.headers['Access-Control-Expose-Headers'] = 'X-Stats, Content-Disposition'
+    return response
 
 
 @app.route('/preview', methods=['POST'])
 def preview():
     try:
-        shop_count = int(request.form.get('shop_count', 0))
-        if shop_count < 1:
-            return jsonify({'error': '至少需要 1 個店鋪'}), 400
-
-        shops_data = []
-        for i in range(shop_count):
-            shop_name = request.form.get(f'shop_name_{i}', '').strip()
-            file = request.files.get(f'shop_file_{i}')
-
-            if not shop_name:
-                return jsonify({'error': f'第 {i+1} 個店鋪名不能為空'}), 400
-            if not file or file.filename == '':
-                return jsonify({'error': f'店鋪「{shop_name}」未選擇文件'}), 400
-            if not allowed_file(file.filename):
-                return jsonify({'error': f'店鋪「{shop_name}」文件格式不支持（只支持 .xlsx / .xls）'}), 400
-
-            file_bytes = file.read()
-            try:
-                src = load_source(io.BytesIO(file_bytes))
-                data = build_preview_data(shop_name, src)
-                shops_data.append(data)
-            except Exception as e:
-                return jsonify({
-                    'error': f'店鋪「{shop_name}」解析失敗: {str(e)}。'
-                             '請確認文件包含「項目名稱」「分類」「數量」「金額」等列。'
-                }), 400
-
-        return jsonify({'shops': shops_data})
-
+        specs = _read_shop_specs(request)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'error': f'處理出錯: {str(e)}'}), 500
+        return jsonify({'error': f'處理出錯: {e}'}), 500
+
+    shops_data = []
+    for s in specs:
+        try:
+            src = load_source(io.BytesIO(s['file_bytes']), s['pos_type'])
+            menu = get_menu(s['restaurant_type'])
+            data = build_preview_data(s['shop_name'], src, menu)
+            shops_data.append(data)
+        except Exception as e:
+            return jsonify({
+                'error': f'店鋪「{s["shop_name"]}」解析失敗: {e}',
+            }), 400
+    return jsonify({'shops': shops_data})
 
 
 @app.route('/health')

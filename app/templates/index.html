@@ -26,7 +26,7 @@
 </head>
 <body class="bg-gray-50 min-h-screen">
 
-<div class="max-w-5xl mx-auto px-4 py-8">
+<div class="max-w-5xl xl:max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
   <!-- 页头 -->
   <header class="text-center mb-8">
@@ -34,7 +34,7 @@
     <p class="text-gray-600">上傳 POS 銷量 Excel，按菜單分類自動生成對照表</p>
   </header>
 
-  <!-- 上传卡片 -->
+  <!-- 上传卡片（与预览框等宽） -->
   <div class="bg-white rounded-xl shadow-sm p-6 md:p-8">
 
     <form id="upload-form" class="space-y-6">
@@ -127,7 +127,7 @@
     </div>
   </div>
 
-  <!-- 使用说明 -->
+  <!-- 使用说明（与预览框等宽） -->
   <details class="mt-6 bg-white rounded-xl shadow-sm">
     <summary class="px-6 py-4 cursor-pointer font-medium text-gray-700 hover:bg-gray-50 rounded-xl">
       使用說明
@@ -151,6 +151,10 @@
 let shopCount = 0;
 let mergeCounter = 0;
 
+// 用户在 ▶ 拆分里点 × 删的行: { shopName: Set("posName||cat") }
+// 每次重新生成预览都清空; /generate 时按店发回后端
+let shopDeletions = {};
+
 // ===== 工具函数 =====
 
 function escHtml(str) {
@@ -161,9 +165,11 @@ function escHtml(str) {
 
 // ===== 店铺卡片 =====
 
-function createShopCard(idx, defaultName) {
+function createShopCard(idx, defaultName, restaurant, pos) {
   return `
     <div class="shop-card border border-gray-200 rounded-lg p-4" data-idx="${idx}">
+      <input type="hidden" name="shop_restaurant_${idx}" value="${restaurant}">
+      <input type="hidden" name="shop_pos_${idx}" value="${pos}">
       <div class="flex items-center justify-between mb-3">
         <span class="text-sm font-medium text-gray-700">店舖 ${idx + 1}</span>
         <button type="button" class="remove-shop-btn text-red-500 hover:text-red-700 text-sm" data-idx="${idx}">移除</button>
@@ -187,9 +193,9 @@ function createShopCard(idx, defaultName) {
     </div>`;
 }
 
-function addShop(defaultName = '') {
+function addShop(defaultName = '', restaurant = 'tiantian', pos = 'canyinwang') {
   document.getElementById('shops-container')
-    .insertAdjacentHTML('beforeend', createShopCard(shopCount, defaultName));
+    .insertAdjacentHTML('beforeend', createShopCard(shopCount, defaultName, restaurant, pos));
   shopCount++;
   attachShopEvents();
   updateRemoveButtons();
@@ -242,17 +248,27 @@ document.getElementById('add-shop-btn').onclick = () => addShop();
 
 // ===== 快速选店 =====
 
+// POS 平台显示名（按钮文字后缀用）
+const POS_DISPLAY = {
+  'canyinwang': '餐飲王',
+  'pos365':    '365',
+  'meituan':   '美團',
+  'keeta':     'Keeta',
+};
+
+// 每家店带 restaurant / pos 元数据
+// pos 留空表示「未指定」（上传会用后端默认 canyinwang）
 const QS_STORES = {
   '香港': [
-    { label: '銅鑼灣（美團）', name: '香港天天銅鑼灣' },
-    { label: '圓方（美團）',   name: '香港天天圓方'   },
-    { label: '沙田（餐飲王）',   name: '香港天天沙田'    },
-    { label: '太古城（餐飲王）', name: '香港天天太古城'  },
+    { label: '銅鑼灣', name: '香港天天銅鑼灣', restaurant: 'tiantian', pos: 'meituan'    },
+    { label: '圓方',   name: '香港天天圓方',   restaurant: 'tiantian', pos: 'meituan'    },
+    { label: '沙田',   name: '香港天天沙田',   restaurant: 'tiantian', pos: 'canyinwang' },
+    { label: '太古城', name: '香港天天太古城', restaurant: 'tiantian', pos: 'canyinwang' },
   ],
   '内地': [
-    { label: '海口天天', name: '海口天天' },
-    { label: '南京天天', name: '南京天天' },
-    { label: '上海天天', name: '上海天天' },
+    { label: '海口天天', name: '海口天天', restaurant: 'tiantian', pos: 'canyinwang' },
+    { label: '南京天天', name: '南京天天', restaurant: 'tiantian', pos: 'canyinwang' },
+    { label: '上海天天', name: '上海天天', restaurant: 'tiantian', pos: 'canyinwang' },
   ],
 };
 
@@ -270,19 +286,19 @@ function qsSelectRegion(region) {
   qsRender();
 }
 
-function qsToggleStore(shopName) {
+function qsToggleStore(name, restaurant, pos) {
   const cards = document.querySelectorAll('.shop-card');
   let found = null;
   cards.forEach(card => {
     const idx = card.dataset.idx;
     const input = card.querySelector(`input[name="shop_name_${idx}"]`);
-    if (input && input.value === shopName) found = card;
+    if (input && input.value === name) found = card;
   });
   if (found) {
     found.remove();
     updateRemoveButtons();
   } else {
-    addShop(shopName);
+    addShop(name, restaurant || 'tiantian', pos || 'canyinwang');
   }
   qsRender();
 }
@@ -339,15 +355,19 @@ function qsRender() {
         const cls = selected
           ? 'px-3 py-1.5 text-sm rounded-full border border-blue-500 bg-blue-600 text-white transition'
           : 'px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition';
-        return `<button type="button" onclick="qsToggleStore('${s.name}')" class="${cls}">${s.label}</button>`;
+        const posSuffix = s.pos && POS_DISPLAY[s.pos] ? `（${POS_DISPLAY[s.pos]}）` : '';
+        const display = s.label + posSuffix;
+        const r = s.restaurant || 'tiantian';
+        const p = s.pos || '';
+        return `<button type="button" onclick="qsToggleStore('${s.name}','${r}','${p}')" class="${cls}">${display}</button>`;
       }).join('');
       storePanel.innerHTML = arrow + btns;
     }
   }
 }
 
-addShop('香港天天太古城');
-addShop('香港天天沙田');
+addShop('香港天天太古城', 'tiantian', 'canyinwang');
+addShop('香港天天沙田', 'tiantian', 'canyinwang');
 
 // ===== FormData 构建 =====
 
@@ -358,9 +378,24 @@ function buildFormData() {
     const idx = card.dataset.idx;
     const nameInput = card.querySelector(`input[name="shop_name_${idx}"]`);
     const fileInput = card.querySelector(`input[name="shop_file_${idx}"]`);
+    const restaurantInput = card.querySelector(`input[name="shop_restaurant_${idx}"]`);
+    const posInput = card.querySelector(`input[name="shop_pos_${idx}"]`);
     if (nameInput && fileInput) {
-      formData.append(`shop_name_${count}`, nameInput.value);
+      const sn = nameInput.value;
+      formData.append(`shop_name_${count}`, sn);
+      formData.append(`restaurant_type_${count}`, restaurantInput ? restaurantInput.value : 'tiantian');
+      formData.append(`pos_type_${count}`, posInput ? posInput.value : 'canyinwang');
       if (fileInput.files[0]) formData.append(`shop_file_${count}`, fileInput.files[0]);
+
+      // 用户在 ▶ 里点 × 删的行
+      const dels = shopDeletions[sn];
+      if (dels && dels.size > 0) {
+        const list = Array.from(dels).map(key => {
+          const [name, cat] = key.split('||');
+          return { name, cat };
+        });
+        formData.append(`deletions_${count}`, JSON.stringify(list));
+      }
       count++;
     }
   });
@@ -447,6 +482,7 @@ function renderPreview(shopsData) {
   const contentEl = document.getElementById('preview-content');
   contentEl.innerHTML = '';
   mergeCounter = 0;
+  shopDeletions = {};   // 重新预览即清空之前的 × 删除标记
 
   if (shopsData.length > 1) {
     tabsEl.classList.remove('hidden');
@@ -481,9 +517,9 @@ function switchTab(idx) {
 function renderShopPreview(shopData) {
   return `
     <div class="overflow-x-auto">
-      <div class="flex gap-3 min-w-max pb-2">
+      <div class="grid grid-cols-[1fr_4px_1fr] gap-3 pb-2 min-w-[920px]">
         ${renderDineinTable(shopData)}
-        <div class="w-1 self-stretch bg-gray-200 rounded flex-shrink-0"></div>
+        <div class="bg-gray-200 rounded"></div>
         ${renderDeliveryTable(shopData)}
       </div>
     </div>`;
@@ -497,43 +533,42 @@ const TDL = 'px-2 py-1 text-xs border border-gray-200 text-left align-top';
 
 function renderDineinTable(shopData) {
   let rows = '';
+  const sn = shopData.shop_name;
 
   shopData.tea.forEach((item, i) => {
-    rows += dineinRow(item, i + 1, i === 0 ? '茶位' : '', 'bg-yellow-50');
+    rows += dineinRow(item, i + 1, i === 0 ? '茶位' : '', 'bg-yellow-50', sn);
   });
 
-  rows += `<tr><td colspan="6" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-blue-100">大MENU</td></tr>`;
+  rows += `<tr><td colspan="5" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-blue-100">大MENU</td></tr>`;
 
   shopData.menu.forEach(section => {
     section.items.forEach((item, i) => {
-      rows += dineinRow(item, i + 1, i === 0 ? section.cat : '', '');
+      rows += dineinRow(item, i + 1, i === 0 ? section.cat : '', '', sn);
     });
-    rows += `<tr><td colspan="6" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
+    rows += `<tr><td colspan="5" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
   });
 
   if (shopData.extras.length > 0) {
-    rows += `<tr><td colspan="6" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-gray-300">堂食菜單外（POS有銷售但菜單未列）</td></tr>`;
+    rows += `<tr><td colspan="5" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-gray-300">堂食菜單外（POS有銷售但菜單未列）</td></tr>`;
     shopData.extras.forEach(section => {
       section.items.forEach((item, i) => {
         rows += `<tr>
           <td class="${TD} bg-gray-50 text-gray-400">${escHtml(i === 0 ? section.cat : '')}</td>
           <td class="${TD} bg-gray-50 text-gray-400">${i + 1}</td>
           <td class="${TDL} bg-gray-50 text-gray-400 italic min-w-[180px]">${escHtml(item.name)}</td>
-          <td class="${TD} bg-gray-50"></td>
           <td class="${TD} bg-gray-50 text-gray-400">${item.qty}</td>
           <td class="${TD} bg-gray-50 text-gray-400">${item.amt.toLocaleString()}</td>
         </tr>`;
       });
-      rows += `<tr><td colspan="6" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
+      rows += `<tr><td colspan="5" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
     });
   }
 
-  return `<table class="border-collapse text-xs">
+  return `<table class="border-collapse text-xs w-full">
     <thead><tr>
       <th class="${TH} w-20">分類</th>
       <th class="${TH} w-10">排序</th>
-      <th class="${TH} w-52">品名</th>
-      <th class="${TH} w-14">單位</th>
+      <th class="${TH}">品名</th>
       <th class="${TH} w-12">數量</th>
       <th class="${TH} w-16">金額</th>
     </tr></thead>
@@ -541,36 +576,104 @@ function renderDineinTable(shopData) {
   </table>`;
 }
 
-function dineinRow(item, rank, catLabel, bgClass) {
-  let nameCell;
-  if (item.merged && item.merged.length > 1) {
-    const id = 'mg' + (++mergeCounter);
-    const variantsHtml = item.merged.map(v =>
-      `<div class="flex items-start justify-between gap-2 py-0.5">
-        <span class="text-gray-300">└</span>
-        <span class="flex-1 text-gray-500">${escHtml(v.name)}</span>
-        <span class="text-gray-400 whitespace-nowrap">${v.qty}份 ¥${v.amt.toLocaleString()}</span>
-      </div>`
-    ).join('');
-    nameCell = `
-      <div class="flex items-start gap-1">
-        <button class="text-blue-500 hover:text-blue-700 flex-shrink-0 text-xs leading-4 mt-0.5"
-          onclick="toggleMerge(this,'${id}')">▶</button>
-        <span>${escHtml(item.name)}</span>
-      </div>
-      <div id="${id}" class="hidden mt-1 pl-1 text-xs merge-detail">
-        ${variantsHtml}
-      </div>`;
-  } else {
-    nameCell = escHtml(item.name);
+// 公共: 名字单元格 (合并项时带 ▶ 展开 + × 删除/恢復 切换按钮)
+function buildMergedNameCell(item, shopName) {
+  if (!item.merged || item.merged.length < 2) {
+    return escHtml(item.name);
   }
+  const id = 'mg' + (++mergeCounter);
+  const sn = escHtml(shopName || '');
+  const variantsHtml = item.merged.map((v, vIdx) => {
+    const catLabel = v.cat ? `（${escHtml(v.cat)}）` : '';
+    const vid = `${id}-v${vIdx}`;
+    const safeName = escHtml(v.name);
+    const safeCat  = escHtml(v.cat || '');
+    return `<div id="${vid}" class="merge-variant flex items-start justify-between gap-2 py-0.5"
+                 data-qty="${v.qty}" data-amt="${v.amt}"
+                 data-name="${safeName}" data-cat="${safeCat}">
+      <span class="text-gray-300 v-prefix">└</span>
+      <span class="v-label flex-1 text-gray-500">${safeName}${catLabel}</span>
+      <span class="v-stats text-gray-400 whitespace-nowrap">${v.qty}份 ¥${v.amt.toLocaleString()}</span>
+      <button type="button" class="v-toggle-btn text-red-400 hover:text-red-600 text-xs leading-none px-1 flex-shrink-0 w-8 text-right"
+              title="刪除此行（不算進總計，下載 Excel 也會排除）"
+              onclick="toggleVariantDelete('${sn}','${vid}')">×</button>
+    </div>`;
+  }).join('');
+  return `
+    <div class="flex items-start gap-1">
+      <button class="text-blue-500 hover:text-blue-700 flex-shrink-0 text-xs leading-4 mt-0.5"
+        onclick="toggleMerge(this,'${id}')">▶</button>
+      <span>${escHtml(item.name)}</span>
+    </div>
+    <div id="${id}" class="hidden mt-1 pl-1 text-xs merge-detail">
+      ${variantsHtml}
+    </div>`;
+}
+
+// × / 恢復 点击切换: 标记/取消标记 + 更新视觉 + 累加/去除 shopDeletions + 重算父行
+function toggleVariantDelete(shopName, variantId) {
+  const el = document.getElementById(variantId);
+  if (!el) return;
+  const name = el.dataset.name;
+  const cat  = el.dataset.cat;
+  const key  = name + '||' + cat;
+  const wasDeleted = el.dataset.deleted === '1';
+
+  const label = el.querySelector('.v-label');
+  const stats = el.querySelector('.v-stats');
+  const btn   = el.querySelector('.v-toggle-btn');
+
+  if (wasDeleted) {
+    // 恢復
+    if (shopDeletions[shopName]) shopDeletions[shopName].delete(key);
+    el.dataset.deleted = '';
+    label.classList.remove('line-through', 'opacity-50');
+    stats.classList.remove('line-through', 'opacity-50');
+    btn.textContent = '×';
+    btn.title = '刪除此行（不算進總計，下載 Excel 也會排除）';
+    btn.classList.remove('text-blue-500', 'hover:text-blue-700');
+    btn.classList.add('text-red-400', 'hover:text-red-600');
+  } else {
+    // 删除
+    if (!shopDeletions[shopName]) shopDeletions[shopName] = new Set();
+    shopDeletions[shopName].add(key);
+    el.dataset.deleted = '1';
+    label.classList.add('line-through', 'opacity-50');
+    stats.classList.add('line-through', 'opacity-50');
+    btn.textContent = '恢復';
+    btn.title = '恢復此行';
+    btn.classList.remove('text-red-400', 'hover:text-red-600');
+    btn.classList.add('text-blue-500', 'hover:text-blue-700');
+  }
+  recalcParentRow(el);
+}
+
+function recalcParentRow(variantEl) {
+  const container = variantEl.closest('.merge-detail');
+  if (!container) return;
+  let sumQ = 0, sumA = 0;
+  container.querySelectorAll('.merge-variant').forEach(v => {
+    if (v.dataset.deleted === '1') return;
+    sumQ += parseInt(v.dataset.qty, 10) || 0;
+    sumA += parseInt(v.dataset.amt, 10) || 0;
+  });
+  const tr = container.closest('tr');
+  if (!tr) return;
+  const cells = tr.querySelectorAll('td');
+  // 表结构: cat / rank / name / qty / amt  → qty 在第 4 格, amt 在第 5 格
+  if (cells.length < 5) return;
+  cells[3].textContent = sumQ;
+  cells[4].textContent = sumA.toLocaleString();
+}
+
+function dineinRow(item, rank, catLabel, bgClass, shopName) {
+  const nameCell = buildMergedNameCell(item, shopName);
 
   const bg = bgClass || '';
   return `<tr>
     <td class="${TD} ${bg}">${escHtml(catLabel)}</td>
     <td class="${TD} ${bg}">${rank}</td>
-    <td class="${TDL} ${bg} min-w-[180px] max-w-[240px]">${nameCell}</td>
-    <td class="${TD} ${bg}">${escHtml(item.unit || '')}</td>
+    <td class="${TDL} ${bg} min-w-[180px]">${nameCell}</td>
     <td class="${TD} ${bg}">${item.qty}</td>
     <td class="${TD} ${bg}">${item.amt ? item.amt.toLocaleString() : '0'}</td>
   </tr>`;
@@ -582,6 +685,7 @@ function renderDeliveryTable(shopData) {
   const DTH = 'px-2 py-1.5 text-center text-xs font-semibold border border-gray-300 bg-gray-500 text-white whitespace-nowrap';
   const DTD = 'px-2 py-1 text-xs border border-gray-200 text-center bg-amber-50 align-top';
   const DTDL = 'px-2 py-1 text-xs border border-gray-200 text-left bg-amber-50 align-top';
+  const sn = shopData.shop_name;
 
   let rows = '';
   shopData.dlv_normal.forEach(section => {
@@ -589,7 +693,7 @@ function renderDeliveryTable(shopData) {
       rows += `<tr>
         <td class="${DTD}">${escHtml(i === 0 ? section.cat : '')}</td>
         <td class="${DTD}">${i + 1}</td>
-        <td class="${DTDL} min-w-[160px]">${escHtml(item.name)}</td>
+        <td class="${DTDL} min-w-[160px]">${buildMergedNameCell(item, sn)}</td>
         <td class="${DTD}">${item.qty}</td>
         <td class="${DTD}">${item.amt.toLocaleString()}</td>
       </tr>`;
@@ -604,7 +708,7 @@ function renderDeliveryTable(shopData) {
         rows += `<tr>
           <td class="${DTD}">${escHtml(i === 0 ? section.cat : '')}</td>
           <td class="${DTD}">${i + 1}</td>
-          <td class="${DTDL} min-w-[160px]">${escHtml(item.name)}</td>
+          <td class="${DTDL} min-w-[160px]">${buildMergedNameCell(item, sn)}</td>
           <td class="${DTD}">${item.qty}</td>
           <td class="${DTD}">${item.amt.toLocaleString()}</td>
         </tr>`;
@@ -613,11 +717,11 @@ function renderDeliveryTable(shopData) {
     });
   }
 
-  return `<table class="border-collapse text-xs">
+  return `<table class="border-collapse text-xs w-full">
     <thead><tr>
       <th class="${DTH} w-36">外賣分類</th>
       <th class="${DTH} w-10">排序</th>
-      <th class="${DTH} w-44">品名</th>
+      <th class="${DTH}">品名</th>
       <th class="${DTH} w-12">數量</th>
       <th class="${DTH} w-16">金額</th>
     </tr></thead>

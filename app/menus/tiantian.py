@@ -1,12 +1,19 @@
 """
-菜单配置 - 整个数据处理的核心规则在这里
-修改菜品或映射规则只需要改这一个文件
+天天 餐厅菜单配置
+
+改菜品或映射规则只需要改这一个文件。
 """
+from .base import Menu
+
+
+BRAND_NAME = '天天Authentic'
+
 
 # ===========================================
 # 菜单数据
 # 每项: (菜名, 价格, 单位, [POS项目名变体列表])
-# POS项目名变体是同一个菜在POS里的所有写法
+# POS项目名变体是同一个菜在 POS 里的所有写法（通用部分）
+# 单店特殊写法放到下面的 STORE_OVERRIDES
 # ===========================================
 MENU = [
     ('茶位', [
@@ -128,7 +135,7 @@ MENU = [
 
 
 # ===========================================
-# 堂食「菜單外」要丢弃的分类
+# 堂食「菜單外」要丢弃的 POS 分类
 # 这些是 POS 系统的辅助分类，不算正常销售
 # ===========================================
 DROP_CATEGORIES_DINEIN = {
@@ -139,11 +146,21 @@ DROP_CATEGORIES_DINEIN = {
 }
 
 
-def collect_used_names():
-    """收集所有菜单菜品已经引用的 POS 项目名"""
-    used = set()
-    for cat, items in MENU:
-        for name, price, unit, pos_names in items:
-            for pn in pos_names:
-                used.add(pn)
-    return used
+# ===========================================
+# 单店特殊 POS 写法补丁
+# 结构: { '店铺name': { '菜单显示名': ['该店特有的 POS 项目名1', ...] } }
+# ===========================================
+STORE_OVERRIDES: dict = {
+    '香港天天沙田': {
+        '酥炸椒鹽板豆腐': ['酥炸椒鹽豆腐'],  # 沙田 POS 漏了「板」字
+    },
+}
+
+
+# 暴露给注册表的 Menu 实例
+menu = Menu(
+    brand=BRAND_NAME,
+    items=MENU,
+    drop_categories=DROP_CATEGORIES_DINEIN,
+    store_overrides=STORE_OVERRIDES,
+)
