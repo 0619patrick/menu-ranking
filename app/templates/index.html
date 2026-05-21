@@ -28,39 +28,44 @@
 
 <div class="max-w-5xl xl:max-w-7xl 2xl:max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-  <!-- 页头 -->
-  <header class="text-center mb-8">
-    <h1 class="text-3xl font-bold text-gray-900 mb-2">菜品銷量排行</h1>
-    <p class="text-gray-600">上傳 POS 銷量 Excel，按菜單分類自動生成對照表</p>
-  </header>
+  <!-- 顶部导航：餐厅切换 -->
+  <nav class="bg-white rounded-2xl shadow-sm px-4 sm:px-6 py-4 mb-6 flex items-center justify-between gap-3 flex-wrap">
+    <!-- Logo -->
+    <div class="flex items-center gap-2.5">
+      <div class="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+      </div>
+      <span class="text-lg font-semibold text-gray-900">菜品銷量排行</span>
+    </div>
+
+    <!-- 餐厅 tabs -->
+    <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
+      <button type="button" data-rest="tiantian"     onclick="setRestaurant('tiantian')"
+              class="rest-tab-btn px-7 py-3 text-base font-semibold rounded-full transition">天天</button>
+      <button type="button" data-rest="achengrouyou" onclick="setRestaurant('achengrouyou')"
+              class="rest-tab-btn px-7 py-3 text-base font-semibold rounded-full transition">阿城鵝肉</button>
+      <button type="button" data-rest="sijifenfang"  onclick="setRestaurant('sijifenfang')"
+              class="rest-tab-btn px-7 py-3 text-base font-semibold rounded-full transition">四季芬芳</button>
+      <button type="button" data-rest="yizheng"      onclick="setRestaurant('yizheng')"
+              class="rest-tab-btn px-7 py-3 text-base font-semibold rounded-full transition">鮨政</button>
+      <button type="button" data-rest="taicai"       onclick="setRestaurant('taicai')"
+              class="rest-tab-btn px-7 py-3 text-base font-semibold rounded-full transition">泰菜</button>
+    </div>
+  </nav>
 
   <!-- 上传卡片（与预览框等宽） -->
   <div class="bg-white rounded-xl shadow-sm p-6 md:p-8">
 
     <form id="upload-form" class="space-y-6">
 
-      <!-- 快速选店 -->
+      <!-- 快速选店（顶部已选餐厅，这里直接列出该餐厅的门店，按地区分组） -->
       <div class="pb-4 border-b border-gray-100">
         <p class="text-xs text-gray-400 font-medium mb-2">快速選擇門店</p>
-        <!-- 第一级：品牌 -->
-        <div class="flex gap-2 flex-wrap">
-          <button type="button" id="qs-brand-btn" onclick="qsToggleBrand()"
-            class="px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition">
-            天天 <span id="qs-brand-arrow">▾</span>
-          </button>
-        </div>
-        <!-- 第二级：地区 -->
-        <div id="qs-region-panel" class="hidden mt-2 flex gap-2 flex-wrap items-center">
-          <span class="text-xs text-gray-300">▸</span>
-          <button type="button" onclick="qsSelectRegion('香港')" id="qs-btn-hk"
-            class="qs-region-btn px-3 py-1.5 text-sm rounded-full border transition">香港</button>
-          <button type="button" onclick="qsSelectRegion('内地')" id="qs-btn-cn"
-            class="qs-region-btn px-3 py-1.5 text-sm rounded-full border transition">内地</button>
-        </div>
-        <!-- 第三级：门店 -->
-        <div id="qs-store-panel" class="hidden mt-2 flex gap-2 flex-wrap items-center">
-          <span class="text-xs text-gray-300">▸</span>
-          <!-- 由 JS 渲染 -->
+        <div id="qs-stores-panel" class="space-y-2">
+          <!-- 由 JS 按当前餐厅渲染 -->
         </div>
       </div>
 
@@ -246,7 +251,7 @@ function updateRemoveButtons() {
 
 document.getElementById('add-shop-btn').onclick = () => addShop();
 
-// ===== 快速选店 =====
+// ===== 餐厅 + 快速选店 =====
 
 // POS 平台显示名（按钮文字后缀用）
 const POS_DISPLAY = {
@@ -256,33 +261,39 @@ const POS_DISPLAY = {
   'keeta':     'Keeta',
 };
 
-// 每家店带 restaurant / pos 元数据
-// pos 留空表示「未指定」（上传会用后端默认 canyinwang）
-const QS_STORES = {
-  '香港': [
-    { label: '銅鑼灣', name: '香港天天銅鑼灣', restaurant: 'tiantian', pos: 'meituan'    },
-    { label: '圓方',   name: '香港天天圓方',   restaurant: 'tiantian', pos: 'meituan'    },
-    { label: '沙田',   name: '香港天天沙田',   restaurant: 'tiantian', pos: 'canyinwang' },
-    { label: '太古城', name: '香港天天太古城', restaurant: 'tiantian', pos: 'canyinwang' },
-  ],
-  '内地': [
-    { label: '海口天天', name: '海口天天', restaurant: 'tiantian', pos: 'canyinwang' },
-    { label: '南京天天', name: '南京天天', restaurant: 'tiantian', pos: 'canyinwang' },
-    { label: '上海天天', name: '上海天天', restaurant: 'tiantian', pos: 'canyinwang' },
-  ],
+// 每个餐厅的门店列表（按地区分组）
+// 没有门店的餐厅留空对象, 顶部 tab 会显示"暫無門店"
+const QS_STORES_BY_RESTAURANT = {
+  'tiantian': {
+    '香港': [
+      { label: '銅鑼灣', name: '香港天天銅鑼灣', pos: 'meituan'    },
+      { label: '圓方',   name: '香港天天圓方',   pos: 'meituan'    },
+      { label: '沙田',   name: '香港天天沙田',   pos: 'canyinwang' },
+      { label: '太古城', name: '香港天天太古城', pos: 'canyinwang' },
+    ],
+    '内地': [
+      { label: '海口天天', name: '海口天天', pos: 'meituan' },
+      { label: '南京天天', name: '南京天天', pos: 'meituan' },
+      { label: '上海天天', name: '上海天天', pos: 'meituan' },
+    ],
+  },
+  'achengrouyou': {},   // 阿城鹅肉 - 菜单/门店待补
+  'sijifenfang':  {},   // 四季芬芳
+  'yizheng':      {},   // 鮨政
+  'taicai':       {},   // 泰菜
 };
 
-let qsBrand = false;
-let qsRegion = null;
+let currentRestaurant = 'tiantian';
 
-function qsToggleBrand() {
-  qsBrand = !qsBrand;
-  if (!qsBrand) qsRegion = null;
-  qsRender();
-}
-
-function qsSelectRegion(region) {
-  qsRegion = qsRegion === region ? null : region;
+function setRestaurant(key) {
+  currentRestaurant = key;
+  // 顶部 tab 按钮样式: 大、加粗、active 上下渐变
+  document.querySelectorAll('.rest-tab-btn').forEach(btn => {
+    const isActive = btn.dataset.rest === key;
+    btn.className = isActive
+      ? 'rest-tab-btn px-7 py-3 text-base font-semibold rounded-full bg-gradient-to-b from-blue-600 to-blue-400 text-white shadow-md transition'
+      : 'rest-tab-btn px-7 py-3 text-base font-semibold rounded-full text-gray-600 hover:bg-gray-100 transition';
+  });
   qsRender();
 }
 
@@ -298,7 +309,7 @@ function qsToggleStore(name, restaurant, pos) {
     found.remove();
     updateRemoveButtons();
   } else {
-    addShop(name, restaurant || 'tiantian', pos || 'canyinwang');
+    addShop(name, restaurant || currentRestaurant, pos || 'canyinwang');
   }
   qsRender();
 }
@@ -314,60 +325,36 @@ function qsIsSelected(shopName) {
 }
 
 function qsRender() {
-  const brandBtn = document.getElementById('qs-brand-btn');
-  const regionPanel = document.getElementById('qs-region-panel');
-  const storePanel = document.getElementById('qs-store-panel');
-  const arrow = document.getElementById('qs-brand-arrow');
+  const panel = document.getElementById('qs-stores-panel');
+  const groups = QS_STORES_BY_RESTAURANT[currentRestaurant] || {};
+  const regions = Object.keys(groups).filter(r => groups[r] && groups[r].length > 0);
 
-  // 品牌按钮状态
-  if (qsBrand) {
-    brandBtn.classList.add('border-blue-500', 'text-blue-600', 'bg-blue-50');
-    brandBtn.classList.remove('border-gray-300', 'text-gray-600');
-    arrow.textContent = '▴';
-  } else {
-    brandBtn.classList.remove('border-blue-500', 'text-blue-600', 'bg-blue-50');
-    brandBtn.classList.add('border-gray-300', 'text-gray-600');
-    arrow.textContent = '▾';
+  if (regions.length === 0) {
+    panel.innerHTML = '<p class="text-xs text-gray-400 py-1">暫無門店（菜單/POS 配置尚未補充）</p>';
+    return;
   }
 
-  // 地区面板
-  regionPanel.classList.toggle('hidden', !qsBrand);
-  ['香港', '内地'].forEach(r => {
-    const btn = document.getElementById('qs-btn-' + (r === '香港' ? 'hk' : 'cn'));
-    if (!btn) return;
-    if (qsRegion === r) {
-      btn.className = 'qs-region-btn px-3 py-1.5 text-sm rounded-full border border-blue-500 bg-blue-600 text-white transition';
-    } else {
-      btn.className = 'qs-region-btn px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition';
-    }
-  });
-
-  // 门店面板
-  const stores = qsRegion ? QS_STORES[qsRegion] : [];
-  storePanel.classList.toggle('hidden', !qsRegion);
-  if (qsRegion) {
-    if (stores.length === 0) {
-      storePanel.innerHTML = '<span class="text-xs text-gray-300">▸</span><span class="text-xs text-gray-400">暫無門店</span>';
-    } else {
-      const arrow = '<span class="text-xs text-gray-300">▸</span>';
-      const btns = stores.map(s => {
-        const selected = qsIsSelected(s.name);
-        const cls = selected
-          ? 'px-3 py-1.5 text-sm rounded-full border border-blue-500 bg-blue-600 text-white transition'
-          : 'px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition';
-        const posSuffix = s.pos && POS_DISPLAY[s.pos] ? `（${POS_DISPLAY[s.pos]}）` : '';
-        const display = s.label + posSuffix;
-        const r = s.restaurant || 'tiantian';
-        const p = s.pos || '';
-        return `<button type="button" onclick="qsToggleStore('${s.name}','${r}','${p}')" class="${cls}">${display}</button>`;
-      }).join('');
-      storePanel.innerHTML = arrow + btns;
-    }
-  }
+  panel.innerHTML = regions.map(region => {
+    const btns = groups[region].map(s => {
+      const selected = qsIsSelected(s.name);
+      const cls = selected
+        ? 'px-3 py-1.5 text-sm rounded-full border border-blue-500 bg-blue-600 text-white transition'
+        : 'px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition';
+      const posSuffix = s.pos && POS_DISPLAY[s.pos] ? `（${POS_DISPLAY[s.pos]}）` : '';
+      const display = s.label + posSuffix;
+      const p = s.pos || '';
+      return `<button type="button" onclick="qsToggleStore('${s.name}','${currentRestaurant}','${p}')" class="${cls}">${display}</button>`;
+    }).join('');
+    return `<div class="flex gap-2 items-center flex-wrap">
+      <span class="text-sm text-gray-500 font-medium w-10 flex-shrink-0">${region}:</span>
+      ${btns}
+    </div>`;
+  }).join('');
 }
 
 addShop('香港天天太古城', 'tiantian', 'canyinwang');
 addShop('香港天天沙田', 'tiantian', 'canyinwang');
+setRestaurant('tiantian');   // 初始化顶部 tab + 渲染门店面板
 
 // ===== FormData 构建 =====
 
