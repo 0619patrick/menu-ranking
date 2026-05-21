@@ -120,6 +120,26 @@ def get_dinein_sales_detail(name_list, by_name):
     )
 
 
+def _sort_extras_cats(extras):
+    """
+    非平台分类按金额降序; 带「平台」字样的分类作为一整块, 插到「下午茶」之后。
+    没有「下午茶」分类时, 平台块放末尾。
+    """
+    amt = lambda c: sum(x[2] for x in extras[c])
+    non_platform = sorted(
+        [c for c in extras if '平台' not in c],
+        key=lambda c: -amt(c),
+    )
+    platform = sorted(
+        [c for c in extras if '平台' in c],
+        key=lambda c: -amt(c),
+    )
+    if '下午茶' in non_platform:
+        idx = non_platform.index('下午茶')
+        return non_platform[: idx + 1] + platform + non_platform[idx + 1 :]
+    return non_platform + platform
+
+
 def build_dinein_extras(by_name, used_names, drop_categories):
     """
     收集堂食「菜單外」的项目（POS 有销售但菜单未列出的）。
@@ -333,7 +353,7 @@ def build_sheet(ws, shop_name, src, menu: Menu):
         ws.cell(row=current_row_dinein, column=2).alignment = CENTER
         current_row_dinein += 1
 
-        for src_cat in sorted(extras.keys(), key=lambda c: -sum(x[2] for x in extras[c])):
+        for src_cat in _sort_extras_cats(extras):
             items = extras[src_cat]
             start = current_row_dinein
             for idx, (name, q, a) in enumerate(items):
@@ -451,7 +471,7 @@ def build_preview_data(shop_name, src, menu: Menu):
     extras = build_dinein_extras(by_name, used_names, menu.drop_categories)
     extras_sections = [
         {'cat': c, 'items': [{'name': n, 'qty': q, 'amt': a} for n, q, a in extras[c]]}
-        for c in sorted(extras, key=lambda c: -sum(x[2] for x in extras[c]))
+        for c in _sort_extras_cats(extras)
     ]
 
     delivery = build_delivery(src, menu)
