@@ -9,20 +9,20 @@
 """
 from .base import Menu
 from . import tiantian
+from . import acheng
+from . import taicai
+from . import sijifenfang
 
 # TODO: 拿到菜单 PDF 后实现
-# from . import achengrouyou   # 阿城鹅肉
-# from . import sijifenfang    # 四季芬芳
 # from . import yizheng        # 鮨政
-# from . import taicai         # 泰菜
 
 
 MENUS = {
-    'tiantian':     tiantian.menu,
-    # 'achengrouyou': achengrouyou.menu,
-    # 'sijifenfang':  sijifenfang.menu,
+    'tiantian':    tiantian.menu,
+    'acheng':      acheng.menu,
+    'taicai':      taicai.menu,
+    'sijifenfang': sijifenfang.menu,
     # 'yizheng':      yizheng.menu,
-    # 'taicai':       taicai.menu,
 }
 
 

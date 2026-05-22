@@ -22,7 +22,8 @@ from datetime import datetime
 from flask import Flask, render_template, request, send_file, jsonify
 
 from app.processors.transformer import (
-    generate_excel, compute_stats, build_preview_data, load_source, apply_deletions,
+    generate_excel, generate_excel_grouped, group_shops_for_export,
+    compute_stats, build_preview_data, load_source, apply_deletions,
 )
 from app.menus import get_menu
 
@@ -85,12 +86,22 @@ def _read_shop_specs(req):
             except json.JSONDecodeError:
                 deletions = []
 
+        # 月份 / 地区（新版多店并排导出按 (地区, 品牌, 月份) 分 sheet）
+        month_raw = req.form.get(f'shop_month_{i}', '').strip()
+        try:
+            month = int(month_raw) if month_raw else datetime.now().month
+        except ValueError:
+            month = datetime.now().month
+        region = req.form.get(f'shop_region_{i}', '其他').strip() or '其他'
+
         specs.append({
             'shop_name': shop_name,
             'file_bytes': file.read(),
             'restaurant_type': restaurant_type,
             'pos_type': pos_type,
             'deletions': deletions,
+            'month': month,
+            'region': region,
         })
     return specs
 
@@ -110,7 +121,8 @@ def generate():
         return jsonify({'error': f'处理出错: {e}'}), 500
 
     # 每家店只解析一次, Excel 和 stats 共享同一份 DataFrame
-    parsed = []
+    parsed_specs = []   # 给 grouped 用，含 region/month
+    parsed_pairs = []   # 给 stats 用 (shop_name, src, menu)
     for s in specs:
         try:
             src = load_source(io.BytesIO(s['file_bytes']), s['pos_type'])
@@ -118,15 +130,23 @@ def generate():
             menu = get_menu(s['restaurant_type'])
         except Exception as e:
             return jsonify({'error': f'店铺「{s["shop_name"]}」解析失败: {e}'}), 400
-        parsed.append((s['shop_name'], src, menu))
+        parsed_specs.append({
+            'shop_name': s['shop_name'],
+            'src': src,
+            'menu': menu,
+            'region': s['region'],
+            'month':  s['month'],
+        })
+        parsed_pairs.append((s['shop_name'], src, menu))
 
     try:
-        excel_io = generate_excel(parsed)
+        groups = group_shops_for_export(parsed_specs)
+        excel_io = generate_excel_grouped(groups)
     except Exception as e:
         return jsonify({'error': f'生成 Excel 失败: {e}'}), 400
 
     stats_summary = []
-    for shop_name, src, menu in parsed:
+    for shop_name, src, menu in parsed_pairs:
         try:
             stat = compute_stats(src, menu, shop_name=shop_name)
             stat['shop_name'] = shop_name

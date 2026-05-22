@@ -45,7 +45,7 @@
     <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
       <button type="button" data-rest="tiantian"     onclick="setRestaurant('tiantian')"
               class="rest-tab-btn px-7 py-3 text-base font-semibold rounded-full transition">天天</button>
-      <button type="button" data-rest="achengrouyou" onclick="setRestaurant('achengrouyou')"
+      <button type="button" data-rest="acheng"       onclick="setRestaurant('acheng')"
               class="rest-tab-btn px-7 py-3 text-base font-semibold rounded-full transition">阿城鵝肉</button>
       <button type="button" data-rest="sijifenfang"  onclick="setRestaurant('sijifenfang')"
               class="rest-tab-btn px-7 py-3 text-base font-semibold rounded-full transition">四季芬芳</button>
@@ -170,7 +170,12 @@ function escHtml(str) {
 
 // ===== 店铺卡片 =====
 
-function createShopCard(idx, defaultName, restaurant, pos) {
+function createShopCard(idx, defaultName, restaurant, pos, region = '香港', month = null) {
+  if (month == null) month = new Date().getMonth() + 1;  // 默认当前月
+  const monthOpts = Array.from({length: 12}, (_, i) =>
+    `<option value="${i+1}" ${i+1 === month ? 'selected' : ''}>${i+1}月</option>`).join('');
+  const regionOpts = ['香港','内地'].map(r =>
+    `<option value="${r}" ${r === region ? 'selected' : ''}>${r}</option>`).join('');
   return `
     <div class="shop-card border border-gray-200 rounded-lg p-4" data-idx="${idx}">
       <input type="hidden" name="shop_restaurant_${idx}" value="${restaurant}">
@@ -179,12 +184,26 @@ function createShopCard(idx, defaultName, restaurant, pos) {
         <span class="text-sm font-medium text-gray-700">店舖 ${idx + 1}</span>
         <button type="button" class="remove-shop-btn text-red-500 hover:text-red-700 text-sm" data-idx="${idx}">移除</button>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div class="md:col-span-1">
+      <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+        <div class="md:col-span-2">
           <label class="block text-xs text-gray-500 mb-1">店舖名稱</label>
           <input type="text" name="shop_name_${idx}" value="${defaultName}"
             placeholder="例: 太古" required
             class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+        </div>
+        <div class="md:col-span-1">
+          <label class="block text-xs text-gray-500 mb-1">地區</label>
+          <select name="shop_region_${idx}"
+            class="w-full px-2 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            ${regionOpts}
+          </select>
+        </div>
+        <div class="md:col-span-1">
+          <label class="block text-xs text-gray-500 mb-1">月份</label>
+          <select name="shop_month_${idx}"
+            class="w-full px-2 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            ${monthOpts}
+          </select>
         </div>
         <div class="md:col-span-2">
           <label class="block text-xs text-gray-500 mb-1">POS 數據文件 (.xlsx)</label>
@@ -198,9 +217,9 @@ function createShopCard(idx, defaultName, restaurant, pos) {
     </div>`;
 }
 
-function addShop(defaultName = '', restaurant = 'tiantian', pos = 'canyinwang') {
+function addShop(defaultName = '', restaurant = 'tiantian', pos = 'canyinwang', region = '香港', month = null) {
   document.getElementById('shops-container')
-    .insertAdjacentHTML('beforeend', createShopCard(shopCount, defaultName, restaurant, pos));
+    .insertAdjacentHTML('beforeend', createShopCard(shopCount, defaultName, restaurant, pos, region, month));
   shopCount++;
   attachShopEvents();
   updateRemoveButtons();
@@ -277,10 +296,24 @@ const QS_STORES_BY_RESTAURANT = {
       { label: '上海天天', name: '上海天天', pos: 'meituan' },
     ],
   },
-  'achengrouyou': {},   // 阿城鹅肉 - 菜单/门店待补
-  'sijifenfang':  {},   // 四季芬芳
+  'acheng': {           // 阿城鵝肉
+    '香港': [
+      { label: '淘大', name: '香港阿城淘大', pos: 'canyinwang' },
+      { label: '太古', name: '香港阿城太古', pos: 'canyinwang' },
+      { label: '東涌', name: '香港阿城東涌', pos: 'canyinwang' },
+    ],
+  },
+  'sijifenfang': {     // 四季芬芳
+    '香港': [
+      { label: '沙田', name: '香港四季芬芳沙田', pos: 'canyinwang' },
+    ],
+  },
   'yizheng':      {},   // 鮨政
-  'taicai':       {},   // 泰菜
+  'taicai': {           // 泰菜
+    '香港': [
+      { label: '中環', name: '香港泰菜中環', pos: 'canyinwang' },
+    ],
+  },
 };
 
 let currentRestaurant = 'tiantian';
@@ -297,7 +330,7 @@ function setRestaurant(key) {
   qsRender();
 }
 
-function qsToggleStore(name, restaurant, pos) {
+function qsToggleStore(name, restaurant, pos, region) {
   const cards = document.querySelectorAll('.shop-card');
   let found = null;
   cards.forEach(card => {
@@ -309,7 +342,7 @@ function qsToggleStore(name, restaurant, pos) {
     found.remove();
     updateRemoveButtons();
   } else {
-    addShop(name, restaurant || currentRestaurant, pos || 'canyinwang');
+    addShop(name, restaurant || currentRestaurant, pos || 'canyinwang', region || '香港');
   }
   qsRender();
 }
@@ -343,7 +376,7 @@ function qsRender() {
       const posSuffix = s.pos && POS_DISPLAY[s.pos] ? `（${POS_DISPLAY[s.pos]}）` : '';
       const display = s.label + posSuffix;
       const p = s.pos || '';
-      return `<button type="button" onclick="qsToggleStore('${s.name}','${currentRestaurant}','${p}')" class="${cls}">${display}</button>`;
+      return `<button type="button" onclick="qsToggleStore('${s.name}','${currentRestaurant}','${p}','${region}')" class="${cls}">${display}</button>`;
     }).join('');
     return `<div class="flex gap-2 items-center flex-wrap">
       <span class="text-sm text-gray-500 font-medium w-10 flex-shrink-0">${region}:</span>
@@ -352,8 +385,8 @@ function qsRender() {
   }).join('');
 }
 
-addShop('香港天天太古城', 'tiantian', 'canyinwang');
-addShop('香港天天沙田', 'tiantian', 'canyinwang');
+addShop('香港天天太古城', 'tiantian', 'canyinwang', '香港');
+addShop('香港天天沙田',   'tiantian', 'canyinwang', '香港');
 setRestaurant('tiantian');   // 初始化顶部 tab + 渲染门店面板
 
 // ===== FormData 构建 =====
@@ -367,11 +400,15 @@ function buildFormData() {
     const fileInput = card.querySelector(`input[name="shop_file_${idx}"]`);
     const restaurantInput = card.querySelector(`input[name="shop_restaurant_${idx}"]`);
     const posInput = card.querySelector(`input[name="shop_pos_${idx}"]`);
+    const regionInput = card.querySelector(`select[name="shop_region_${idx}"]`);
+    const monthInput  = card.querySelector(`select[name="shop_month_${idx}"]`);
     if (nameInput && fileInput) {
       const sn = nameInput.value;
       formData.append(`shop_name_${count}`, sn);
       formData.append(`restaurant_type_${count}`, restaurantInput ? restaurantInput.value : 'tiantian');
       formData.append(`pos_type_${count}`, posInput ? posInput.value : 'canyinwang');
+      formData.append(`shop_region_${count}`, regionInput ? regionInput.value : '香港');
+      formData.append(`shop_month_${count}`,  monthInput  ? monthInput.value  : String(new Date().getMonth() + 1));
       if (fileInput.files[0]) formData.append(`shop_file_${count}`, fileInput.files[0]);
 
       // 用户在 ▶ 里点 × 删的行
@@ -654,7 +691,11 @@ function recalcParentRow(variantEl) {
 }
 
 function dineinRow(item, rank, catLabel, bgClass, shopName) {
-  const nameCell = buildMergedNameCell(item, shopName);
+  let nameCell = buildMergedNameCell(item, shopName);
+  // 加料段：免費套餐內含次數作为小灰标签拼在名字后面
+  if (item.free_qty && item.free_qty > 0) {
+    nameCell += ` <span class="text-[10px] text-gray-500 bg-gray-100 px-1 py-0.5 rounded ml-1 whitespace-nowrap">套餐內含 ${item.free_qty}次</span>`;
+  }
 
   const bg = bgClass || '';
   return `<tr>
@@ -674,25 +715,11 @@ function renderDeliveryTable(shopData) {
   const DTDL = 'px-2 py-1 text-xs border border-gray-200 text-left bg-amber-50 align-top';
   const sn = shopData.shop_name;
 
-  let rows = '';
-  shopData.dlv_normal.forEach(section => {
-    section.items.forEach((item, i) => {
-      rows += `<tr>
-        <td class="${DTD}">${escHtml(i === 0 ? section.cat : '')}</td>
-        <td class="${DTD}">${i + 1}</td>
-        <td class="${DTDL} min-w-[160px]">${buildMergedNameCell(item, sn)}</td>
-        <td class="${DTD}">${item.qty}</td>
-        <td class="${DTD}">${item.amt.toLocaleString()}</td>
-      </tr>`;
-    });
-    rows += `<tr><td colspan="5" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
-  });
-
-  if (shopData.dlv_selftake.length > 0) {
-    rows += `<tr><td colspan="5" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-gray-500 text-white">─── 自取 ───</td></tr>`;
-    shopData.dlv_selftake.forEach(section => {
+  function renderSectionRows(sections) {
+    let out = '';
+    sections.forEach(section => {
       section.items.forEach((item, i) => {
-        rows += `<tr>
+        out += `<tr>
           <td class="${DTD}">${escHtml(i === 0 ? section.cat : '')}</td>
           <td class="${DTD}">${i + 1}</td>
           <td class="${DTDL} min-w-[160px]">${buildMergedNameCell(item, sn)}</td>
@@ -700,9 +727,38 @@ function renderDeliveryTable(shopData) {
           <td class="${DTD}">${item.amt.toLocaleString()}</td>
         </tr>`;
       });
-      rows += `<tr><td colspan="5" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
+      out += `<tr><td colspan="5" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
     });
+    return out;
   }
+
+  let rows = '';
+  const platforms = shopData.delivery || [];
+  platforms.forEach(p => {
+    // 平台标题行（深色 banner）
+    rows += `<tr><td colspan="5" class="px-2 py-1.5 text-sm font-bold text-center border border-gray-300 bg-gray-700 text-white">━━━ ${escHtml(p.platform)} ━━━</td></tr>`;
+    // 普通段
+    rows += renderSectionRows(p.normal || []);
+    // 自取段
+    if (p.selftake && p.selftake.length > 0) {
+      rows += `<tr><td colspan="5" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-gray-500 text-white">─── 自取 ───</td></tr>`;
+      rows += renderSectionRows(p.selftake);
+    }
+    // 補差價段
+    if (p.adjustments && p.adjustments.length > 0) {
+      rows += `<tr><td colspan="5" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-gray-500 text-white">─── 補差價 ───</td></tr>`;
+      p.adjustments.forEach((item, i) => {
+        rows += `<tr>
+          <td class="${DTD}">${escHtml(i === 0 ? '補差價' : '')}</td>
+          <td class="${DTD}">${i + 1}</td>
+          <td class="${DTDL} min-w-[160px]">${buildMergedNameCell(item, sn)}</td>
+          <td class="${DTD}">${item.qty}</td>
+          <td class="${DTD}">${item.amt.toLocaleString()}</td>
+        </tr>`;
+      });
+      rows += `<tr><td colspan="5" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
+    }
+  });
 
   return `<table class="border-collapse text-xs w-full">
     <thead><tr>
