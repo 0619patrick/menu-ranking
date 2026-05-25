@@ -8,17 +8,17 @@ POS 适配器注册表
 """
 from .base import PosAdapter
 from .canyinwang import CanyinwangAdapter
+from .meituan import MeituanAdapter
 
 # TODO: 拿到样本后实现
 # from .pos365 import Pos365Adapter        # 365 平台
-# from .meituan import MeituanAdapter      # 美团
 # from .keeta import KeetaAdapter          # 外卖 keeta
 
 
 ADAPTERS = {
     'canyinwang': CanyinwangAdapter,
+    'meituan':    MeituanAdapter,
     # 'pos365':     Pos365Adapter,
-    # 'meituan':    MeituanAdapter,
     # 'keeta':      KeetaAdapter,
 }
 

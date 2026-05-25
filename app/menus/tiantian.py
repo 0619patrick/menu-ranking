@@ -157,7 +157,10 @@ STORE_OVERRIDES: dict = {
 
 
 # 暴露给注册表的 Menu 实例
-# 天天外卖区分 KT / FP 两个分类前缀，作为两个独立平台分组显示
+# 外卖识别:
+#   餐飲王 (沙田/太古城): 分类含 KT / FP
+#   美團 (铜锣湾/圆方):   分类 == '外賣'，或菜名含「（外賣）」前缀
+# 三个 marker 并列在 '外賣' 平台下，导出表右侧统一显示
 menu = Menu(
     brand=BRAND_NAME,
     short_name='天天',
@@ -167,5 +170,6 @@ menu = Menu(
     delivery_platforms={
         'KT': ['KT'],
         'FP': ['FP'],
+        '外賣(美團)': ['外賣'],
     },
 )
