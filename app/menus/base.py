@@ -68,21 +68,53 @@ class Menu:
     # 按 POS 菜名直接丢弃（与分类无关）。
     # 例（海口）: {'打包盒', '纸巾', '虾片0元'} ——「其他」分类里这几项 0 营销值要扔掉。
 
+    main_section: Optional[str] = None
+    # 「单品饭/面优先归此分类」机制的目标分类（例：内地天天的 '主食系列'）。
+    # 当 cat_map 把某新菜路由到 '__OUT__'（套餐分类）但菜名包含 main_keywords 中任一
+    # 且不含 set_keywords 中任一时，强制改路由到 main_section，作为🆕新菜显示。
+    # 用途：套餐分类里其实是单品饭/面的菜（如 招牌套餐 下的「冬阴功汤面」「黄咖喱牛脸肉饭」）
+    # 应归到主食系列展示；带「+」「套餐」「双人」等套餐字样的留在菜单外。
+
+    main_keywords: set = field(default_factory=set)
+    # 「单品主食」识别关键字（如 {'饭','面','粉丝','炒粉','炒米','麵','飯'}）。
+
+    set_keywords: set = field(default_factory=set)
+    # 「套餐」识别关键字（如 {'套餐','+','＋','双人','四人','单人','多人','双拼','双飞',
+    # 'Plus｜','plus｜','精选','超值','工作日','人气','抖音'}）。
+    # 名字含其中任一 = 视为套餐，不走 main_section 重定向。
+
     def route_new_item(self, name: str, pos_cat: str) -> Optional[str]:
         """
         判断某 POS 菜（未匹配菜单的新菜）应去向。
         返回:
-          - '__DROP__' / None: 应该丢弃（drop_names 命中 / 显式丢弃）
-          - '__OUT__': 应入「菜單外」（保留原 POS 大类作为段标题）
-          - 其他字符串: 该菜入此菜单分类（作为 🆕 新菜）
+          - '__DROP__' / None: 应该丢弃
+          - '__OUT__': 入「菜單外」（保留原 POS 大类作为段标题）
+          - 其他字符串: 入此菜单分类（作为 🆕 新菜）
+
+        优先级:
+          1. drop_names 命中 → DROP
+          2. force_cat 命中 → 用强制分类（最高优先，纠正 POS 错放）
+          3. set_keywords 命中 → __OUT__（套餐字样的统一进菜單外，
+             即便 cat_map 把大类映到具体菜单分类也强制覆盖）
+          4. cat_map → 取大类映射结果（默认 __OUT__）
+          5. 若 (4) = __OUT__ 且菜名是「单品饭/面」(含 main_keywords) →
+             改路由到 main_section（套餐分类下的单品菜归主食）
         """
         if name in self.drop_names:
             return '__DROP__'
+        # force_cat 最高优先级：对具体菜的精确纠正（如 酥炸椒盐板豆腐 强制归前菜）
         if name in self.force_cat:
             return self.force_cat[name]
-        if pos_cat in self.cat_map:
-            return self.cat_map[pos_cat]
-        return '__OUT__'
+        # set_keywords：套餐字样统一进菜单外（不管 cat_map 怎么映）
+        if self.set_keywords and any(k in name for k in self.set_keywords):
+            return '__OUT__'
+        # cat_map：POS 大类 → 菜单分类（找不到默认 __OUT__）
+        target = self.cat_map.get(pos_cat, '__OUT__')
+        # 套餐分类下的单品饭/面优先归主食系列
+        if (target == '__OUT__' and self.main_section
+                and any(k in name for k in self.main_keywords)):
+            return self.main_section
+        return target
 
     @property
     def all_delivery_markers(self) -> list:

@@ -100,7 +100,7 @@ def precompute_dinein_by_name(src, menu: Menu):
     )
     by_name = {}
     for name, cat, q, a in zip(agg['项目名称'], agg['分类'], agg['数量'], agg['金额']):
-        by_name.setdefault(name, []).append((cat, int(q), int(a)))
+        by_name.setdefault(name, []).append((cat, int(q), int(round(a))))
     return by_name
 
 
@@ -138,10 +138,10 @@ def precompute_addon_split(src, menu: Menu):
                                       'free_q': 0, 'free_a': 0})
         if is_paid:
             entry['paid_q'] = int(q)
-            entry['paid_a'] = int(a)
+            entry['paid_a'] = int(round(a))
         else:
             entry['free_q'] = int(q)
-            entry['free_a'] = int(a)
+            entry['free_a'] = int(round(a))
     return out
 
 
@@ -198,6 +198,26 @@ def _sort_extras_cats(extras):
         idx = non_platform.index('下午茶')
         return non_platform[: idx + 1] + platform + non_platform[idx + 1 :]
     return non_platform + platform
+
+
+def merge_new_items(items_in_cat):
+    """
+    把 new_in_section[菜单分类] 里同名新菜（来自不同 POS 大类）合并成一行。
+
+    入参: [(name, pos_cat, qty, amt), ...]
+    返回: [(name, total_qty, total_amt, [pos_cats]), ...]，按金额降序
+    """
+    agg = {}  # name → [qty, amt, set(cats)]
+    for name, pos_cat, q, a in items_in_cat:
+        if name in agg:
+            agg[name][0] += q
+            agg[name][1] += a
+            agg[name][2].add(pos_cat)
+        else:
+            agg[name] = [q, a, {pos_cat}]
+    out = [(name, q, a, sorted(cats)) for name, (q, a, cats) in agg.items()]
+    out.sort(key=lambda r: -r[2])
+    return out
 
 
 def route_unmatched_items(by_name, used_names, menu: Menu):
@@ -478,9 +498,9 @@ def build_sheet(ws, shop_name, src, menu: Menu):
             else:
                 q, a = get_dinein_sales(pos_names, by_name)
                 items_with_sales.append((name, price, unit, q, a))
-        # 追加路由到本分类的🆕新菜
+        # 追加路由到本分类的🆕新菜（同名跨大类合并）
         if not is_addon:
-            for n, _pcat, q, a in new_in_section.get(cat, []):
+            for n, q, a, _cats in merge_new_items(new_in_section.get(cat, [])):
                 items_with_sales.append((f'🆕 {n}', '', '', q, a))
         items_with_sales.sort(key=lambda x: -x[4])
 
@@ -637,10 +657,11 @@ def build_preview_data(shop_name, src, menu: Menu):
                              'qty': q, 'amt': a,
                              'merged': variants if len(variants) > 1 else []})
             # 插 🆕 新菜：菜单未列、但 cat_map/force_cat 路由到本分类的项目
-            for n, pos_cat, q, a in new_in_section.get(cat, []):
+            # 同名跨 POS 大类合并成一行，原大类列在 pos_cat 字段（合并后是 list）
+            for n, q, a, pos_cats in merge_new_items(new_in_section.get(cat, [])):
                 rows.append({'name': n, 'price': '', 'unit': '',
                              'qty': q, 'amt': a,
-                             'is_new': True, 'pos_cat': pos_cat,
+                             'is_new': True, 'pos_cat': '/'.join(pos_cats),
                              'merged': []})
             rows.sort(key=lambda x: -x['amt'])
         menu_sections.append({'cat': cat, 'items': rows})
@@ -738,9 +759,9 @@ def build_shop_block_data(shop_name, src, menu: Menu):
                 if q == 0 and a == 0:
                     continue
                 rows.append({'name': name, 'qty': q, 'amt': a})
-        # 追加路由进本分类的🆕新菜（菜单未列）
+        # 追加路由进本分类的🆕新菜（同名跨大类合并）
         if not is_addon:
-            for n, _pcat, q, a in new_in_section.get(cat, []):
+            for n, q, a, _cats in merge_new_items(new_in_section.get(cat, [])):
                 rows.append({'name': f'🆕 {n}', 'qty': q, 'amt': a, 'is_new': True})
         if not rows:
             continue
