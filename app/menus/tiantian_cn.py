@@ -284,7 +284,7 @@ STORE_OVERRIDES: dict = {}
 # 暴露给注册表的 Menu 实例
 menu = Menu(
     brand=BRAND_NAME,
-    short_name='天天Plus',
+    short_name='天天',  # 与 tiantian 一致；香港/内地店合并到同一个品牌 Excel 文件
     items=MENU,
     drop_categories=set(),  # 全用 CAT_MAP='__DROP__' 表达
     store_overrides=STORE_OVERRIDES,

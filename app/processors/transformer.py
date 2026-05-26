@@ -498,12 +498,10 @@ def build_sheet(ws, shop_name, src, menu: Menu):
             else:
                 q, a = get_dinein_sales(pos_names, by_name)
                 items_with_sales.append((name, price, unit, q, a))
-        # 追加路由到本分类的项目：pos_native 段不带🆕前缀，普通段带
+        # 追加路由到本分类的项目（Excel 导出不打🆕前缀，业主要求）
         if not is_addon:
-            is_pos_native = cat in menu.pos_native_sections
-            prefix = '' if is_pos_native else '🆕 '
             for n, q, a, _cats in merge_new_items(new_in_section.get(cat, [])):
-                items_with_sales.append((f'{prefix}{n}', '', '', q, a))
+                items_with_sales.append((n, '', '', q, a))
         items_with_sales.sort(key=lambda x: -x[4])
 
         start = current_row_dinein
@@ -767,14 +765,14 @@ def build_shop_block_data(shop_name, src, menu: Menu):
                 if q == 0 and a == 0:
                     continue
                 rows.append({'name': name, 'qty': q, 'amt': a})
-        # 追加路由进本分类的项目：pos_native 段不打🆕，普通段打🆕
+        # 追加路由进本分类的项目（Excel 导出不打🆕前缀，业主要求；is_new 标记仍保留）
         if not is_addon:
             is_pos_native = cat in menu.pos_native_sections
             for n, q, a, _cats in merge_new_items(new_in_section.get(cat, [])):
                 if is_pos_native:
                     rows.append({'name': n, 'qty': q, 'amt': a})
                 else:
-                    rows.append({'name': f'🆕 {n}', 'qty': q, 'amt': a, 'is_new': True})
+                    rows.append({'name': n, 'qty': q, 'amt': a, 'is_new': True})
         if not rows:
             continue
         rows.sort(key=lambda r: -r['amt'])
@@ -1029,6 +1027,46 @@ def generate_excel_grouped(grouped):
     return output
 
 
+def generate_excel_by_brand(grouped):
+    """
+    按品牌拆 Excel：每个品牌输出一个独立的 .xlsx 文件。
+    - 单品牌：直接返回 .xlsx 字节流
+    - 多品牌：打成 .zip 返回
+
+    grouped: 与 generate_excel_grouped 输入相同（已按 region+brand+month 分组）
+
+    返回 (io_bytes, filename, mimetype)。
+    """
+    import zipfile
+    today = datetime.datetime.now().strftime('%Y%m%d')
+
+    # 按品牌拆桶，保留品牌首次出现顺序
+    by_brand = {}
+    brand_order = []
+    for g in grouped:
+        brand = g['brand_short']
+        if brand not in by_brand:
+            by_brand[brand] = []
+            brand_order.append(brand)
+        by_brand[brand].append(g)
+
+    if len(brand_order) == 1:
+        brand = brand_order[0]
+        excel_io = generate_excel_grouped(by_brand[brand])
+        filename = f'{brand}_銷量對照表_{today}.xlsx'
+        mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        return excel_io, filename, mime
+
+    # 多品牌：每个品牌一个 .xlsx，全部塞进 zip
+    zip_io = io.BytesIO()
+    with zipfile.ZipFile(zip_io, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for brand in brand_order:
+            excel_io = generate_excel_grouped(by_brand[brand])
+            zf.writestr(f'{brand}_銷量對照表_{today}.xlsx', excel_io.getvalue())
+    zip_io.seek(0)
+    return zip_io, f'銷量對照表_{today}.zip', 'application/zip'
+
+
 def group_shops_for_export(specs_with_data, default_year=None):
     """
     按 (region, brand_short, month) 把店铺分组。
@@ -1059,6 +1097,21 @@ def group_shops_for_export(specs_with_data, default_year=None):
             order.append(key)
         buckets[key].append((s['shop_name'], s['src'], menu))
 
+    # 排序规则（保证 Excel sheet 顺序稳定）：
+    #   1) 按品牌首次出现顺序（保留用户上传时的品牌顺序）
+    #   2) 同品牌内：region 优先级 内地 → 香港 → 其他，然后月份升序
+    REGION_ORDER = {'内地': 0, '香港': 1}
+    brand_first_seen = {}
+    for k in order:
+        b = k[1]
+        if b not in brand_first_seen:
+            brand_first_seen[b] = len(brand_first_seen)
+
+    def sort_key(k):
+        region, brand, month, year = k
+        return (brand_first_seen[brand], REGION_ORDER.get(region, 9), year, month)
+
+    sorted_keys = sorted(order, key=sort_key)
     return [
         {
             'region':      k[0],
@@ -1067,7 +1120,7 @@ def group_shops_for_export(specs_with_data, default_year=None):
             'year':        k[3],
             'shops':       buckets[k],
         }
-        for k in order
+        for k in sorted_keys
     ]
 
 

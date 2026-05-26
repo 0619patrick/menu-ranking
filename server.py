@@ -22,7 +22,8 @@ from datetime import datetime
 from flask import Flask, render_template, request, send_file, jsonify
 
 from app.processors.transformer import (
-    generate_excel, generate_excel_grouped, group_shops_for_export,
+    generate_excel, generate_excel_grouped, generate_excel_by_brand,
+    group_shops_for_export,
     compute_stats, build_preview_data, load_source, apply_deletions,
 )
 from app.menus import get_menu
@@ -141,7 +142,8 @@ def generate():
 
     try:
         groups = group_shops_for_export(parsed_specs)
-        excel_io = generate_excel_grouped(groups)
+        # 多品牌自动拆成多个 .xlsx 打 zip；单品牌直出 .xlsx
+        file_io, filename, mimetype = generate_excel_by_brand(groups)
     except Exception as e:
         return jsonify({'error': f'生成 Excel 失败: {e}'}), 400
 
@@ -154,12 +156,9 @@ def generate():
         except Exception as e:
             return jsonify({'error': f'店铺「{shop_name}」统计失败: {e}'}), 400
 
-    today = datetime.now().strftime('%Y%m%d')
-    filename = f'銷量對照表_{today}.xlsx'
-
     response = send_file(
-        excel_io,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        file_io,
+        mimetype=mimetype,
         as_attachment=True,
         download_name=filename,
     )
