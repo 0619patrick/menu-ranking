@@ -498,10 +498,12 @@ def build_sheet(ws, shop_name, src, menu: Menu):
             else:
                 q, a = get_dinein_sales(pos_names, by_name)
                 items_with_sales.append((name, price, unit, q, a))
-        # 追加路由到本分类的🆕新菜（同名跨大类合并）
+        # 追加路由到本分类的项目：pos_native 段不带🆕前缀，普通段带
         if not is_addon:
+            is_pos_native = cat in menu.pos_native_sections
+            prefix = '' if is_pos_native else '🆕 '
             for n, q, a, _cats in merge_new_items(new_in_section.get(cat, [])):
-                items_with_sales.append((f'🆕 {n}', '', '', q, a))
+                items_with_sales.append((f'{prefix}{n}', '', '', q, a))
         items_with_sales.sort(key=lambda x: -x[4])
 
         start = current_row_dinein
@@ -658,13 +660,19 @@ def build_preview_data(shop_name, src, menu: Menu):
                              'merged': variants if len(variants) > 1 else []})
             # 插 🆕 新菜：菜单未列、但 cat_map/force_cat 路由到本分类的项目
             # 同名跨 POS 大类合并成一行，原大类列在 pos_cat 字段（合并后是 list）
+            is_pos_native = cat in menu.pos_native_sections
             for n, q, a, pos_cats in merge_new_items(new_in_section.get(cat, [])):
-                rows.append({'name': n, 'price': '', 'unit': '',
-                             'qty': q, 'amt': a,
-                             'is_new': True, 'pos_cat': '/'.join(pos_cats),
-                             'merged': []})
+                row = {'name': n, 'price': '', 'unit': '',
+                       'qty': q, 'amt': a,
+                       'pos_cat': '/'.join(pos_cats),
+                       'merged': []}
+                # pos_native 段不标🆕（该段本来就以 POS 原生项为准）
+                if not is_pos_native:
+                    row['is_new'] = True
+                rows.append(row)
             rows.sort(key=lambda x: -x['amt'])
-        menu_sections.append({'cat': cat, 'items': rows})
+        menu_sections.append({'cat': cat, 'items': rows,
+                              'pos_native': cat in menu.pos_native_sections})
 
     extras_sections = [
         {'cat': c, 'items': [
@@ -759,10 +767,14 @@ def build_shop_block_data(shop_name, src, menu: Menu):
                 if q == 0 and a == 0:
                     continue
                 rows.append({'name': name, 'qty': q, 'amt': a})
-        # 追加路由进本分类的🆕新菜（同名跨大类合并）
+        # 追加路由进本分类的项目：pos_native 段不打🆕，普通段打🆕
         if not is_addon:
+            is_pos_native = cat in menu.pos_native_sections
             for n, q, a, _cats in merge_new_items(new_in_section.get(cat, [])):
-                rows.append({'name': f'🆕 {n}', 'qty': q, 'amt': a, 'is_new': True})
+                if is_pos_native:
+                    rows.append({'name': n, 'qty': q, 'amt': a})
+                else:
+                    rows.append({'name': f'🆕 {n}', 'qty': q, 'amt': a, 'is_new': True})
         if not rows:
             continue
         rows.sort(key=lambda r: -r['amt'])

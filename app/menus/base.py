@@ -83,6 +83,14 @@ class Menu:
     # 'Plus｜','plus｜','精选','超值','工作日','人气','抖音'}）。
     # 名字含其中任一 = 视为套餐，不走 main_section 重定向。
 
+    pos_native_sections: set = field(default_factory=set)
+    # 「POS 原生分类」：菜单 PDF 没有列具体菜品、整段以 POS 实际项目为准的分类。
+    # 例（深圳阿城）: {'12元精选卤味', '特色卤味', '麻辣卤味', '手作系列'}
+    # 这些分类在 MENU 里 items=[]，所有 cat_map 路由到此的项目作为本段的正式内容显示：
+    #   - 不打 🆕 标签 (不是「菜单未列的新菜」，而是该分类的全部内容)
+    #   - 行不上黄底
+    #   - POS 大类原名作为段标题旁的小灰字注解
+
     def route_new_item(self, name: str, pos_cat: str) -> Optional[str]:
         """
         判断某 POS 菜（未匹配菜单的新菜）应去向。
