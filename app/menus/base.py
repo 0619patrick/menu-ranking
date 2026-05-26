@@ -54,6 +54,36 @@ class Menu:
     # 与 addon_categories 配对的菜单分类名（如 '自選菜式(加料)'）。
     # 该菜单段的每个 item 走拆分显示逻辑。
 
+    cat_map: dict = field(default_factory=dict)
+    # POS 「菜品大类」→ 菜单分类名 的映射，用于「菜单外的新菜要归到哪个菜单分类」。
+    # 值可以是: 菜单分类名 / '__OUT__'（菜單外）/ '__DROP__'（丢弃）。
+    # 例（海口）: {'平台套餐': '__OUT__', '新加坡咖喱系列': '猪肉&牛肉系列', '餐具选择': '__DROP__'}
+    # 没在 cat_map 里的 POS 大类，新菜默认归「菜單外」。
+
+    force_cat: dict = field(default_factory=dict)
+    # POS 菜名 → 菜单分类名 的强制覆盖，**仅对未匹配菜单的"新菜"生效**，优先级高于 cat_map。
+    # 用于纠正 POS 把菜放错大类的情况（如海口的 黄咖喱小青龙 实际是龙虾 → '海鲜系列'）。
+
+    drop_names: set = field(default_factory=set)
+    # 按 POS 菜名直接丢弃（与分类无关）。
+    # 例（海口）: {'打包盒', '纸巾', '虾片0元'} ——「其他」分类里这几项 0 营销值要扔掉。
+
+    def route_new_item(self, name: str, pos_cat: str) -> Optional[str]:
+        """
+        判断某 POS 菜（未匹配菜单的新菜）应去向。
+        返回:
+          - '__DROP__' / None: 应该丢弃（drop_names 命中 / 显式丢弃）
+          - '__OUT__': 应入「菜單外」（保留原 POS 大类作为段标题）
+          - 其他字符串: 该菜入此菜单分类（作为 🆕 新菜）
+        """
+        if name in self.drop_names:
+            return '__DROP__'
+        if name in self.force_cat:
+            return self.force_cat[name]
+        if pos_cat in self.cat_map:
+            return self.cat_map[pos_cat]
+        return '__OUT__'
+
     @property
     def all_delivery_markers(self) -> list:
         """所有平台 markers 扁平化, 用于「这一行是否属于外卖」的判断。"""

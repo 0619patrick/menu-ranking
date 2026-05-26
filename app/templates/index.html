@@ -291,9 +291,10 @@ const QS_STORES_BY_RESTAURANT = {
       { label: '太古城', name: '香港天天太古城', pos: 'canyinwang' },
     ],
     '内地': [
-      { label: '海口天天', name: '海口天天', pos: 'meituan' },
-      { label: '南京天天', name: '南京天天', pos: 'meituan' },
-      { label: '上海天天', name: '上海天天', pos: 'meituan' },
+      // 内地店用 tiantian_cn 菜单（人民币、新加坡融合菜），POS 同样美團
+      { label: '海口天天', name: '海口天天', pos: 'meituan', rest: 'tiantian_cn' },
+      { label: '南京天天', name: '南京天天', pos: 'meituan', rest: 'tiantian_cn' },
+      { label: '上海天天', name: '上海天天', pos: 'meituan', rest: 'tiantian_cn' },
     ],
   },
   'acheng': {           // 阿城鵝肉
@@ -376,7 +377,8 @@ function qsRender() {
       const posSuffix = s.pos && POS_DISPLAY[s.pos] ? `（${POS_DISPLAY[s.pos]}）` : '';
       const display = s.label + posSuffix;
       const p = s.pos || '';
-      return `<button type="button" onclick="qsToggleStore('${s.name}','${currentRestaurant}','${p}','${region}')" class="${cls}">${display}</button>`;
+      const r = s.rest || currentRestaurant;   // 单店可覆盖菜单（如内地天天用 tiantian_cn）
+      return `<button type="button" onclick="qsToggleStore('${s.name}','${r}','${p}','${region}')" class="${cls}">${display}</button>`;
     }).join('');
     return `<div class="flex gap-2 items-center flex-wrap">
       <span class="text-sm text-gray-500 font-medium w-10 flex-shrink-0">${region}:</span>
@@ -696,8 +698,15 @@ function dineinRow(item, rank, catLabel, bgClass, shopName) {
   if (item.free_qty && item.free_qty > 0) {
     nameCell += ` <span class="text-[10px] text-gray-500 bg-gray-100 px-1 py-0.5 rounded ml-1 whitespace-nowrap">套餐內含 ${item.free_qty}次</span>`;
   }
+  // 🆕 路由进菜单分类的「菜单未列新菜」：名字前加🆕图标，整行浅黄底
+  if (item.is_new) {
+    nameCell = `<span class="text-[10px] bg-yellow-300 text-yellow-900 px-1 py-0.5 rounded mr-1 font-bold">🆕</span>${nameCell}`;
+    if (item.pos_cat) {
+      nameCell += ` <span class="text-[10px] text-gray-400 italic">(POS分类: ${escHtml(item.pos_cat)})</span>`;
+    }
+  }
 
-  const bg = bgClass || '';
+  const bg = item.is_new ? 'bg-yellow-50' : (bgClass || '');
   return `<tr>
     <td class="${TD} ${bg}">${escHtml(catLabel)}</td>
     <td class="${TD} ${bg}">${rank}</td>

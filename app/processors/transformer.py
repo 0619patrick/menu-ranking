@@ -200,23 +200,42 @@ def _sort_extras_cats(extras):
     return non_platform + platform
 
 
-def build_dinein_extras(by_name, used_names, drop_categories):
+def route_unmatched_items(by_name, used_names, menu: Menu):
     """
-    收集堂食「菜單外」的项目（POS 有销售但菜单未列出的）。
-    从 by_name 中过滤掉已被菜单引用的 POS 名 + 要丢弃的辅助分类。
+    把所有「菜单没匹配上」的 POS 行按 menu.cat_map / force_cat / drop_names 路由：
+      - 目标是某菜单分类名 → 当作🆕新菜，加进 new_in_section[菜单分类] 列表
+      - 目标是 '__OUT__'   → 放进 extras（保留原 POS 大类作为段标题）
+      - 目标是 '__DROP__' / drop_names 命中 / drop_categories 命中 → 丢弃
+
+    返回 (new_in_section, extras):
+      - new_in_section: { 菜单分类名: [(name, pos_cat, qty, amt), ...] }
+      - extras:         { POS分类名: [(name, qty, amt), ...] }
     """
+    new_in_section = {}
     extras = {}
     for name, rows in by_name.items():
         if name in used_names:
             continue
         for cat, q, a in rows:
-            if cat in drop_categories:
+            if cat in menu.drop_categories:
                 continue
             if q == 0 and a == 0:
                 continue
-            extras.setdefault(cat, []).append((name, q, a))
+            target = menu.route_new_item(name, cat)
+            if target == '__DROP__' or target is None:
+                continue
+            if target == '__OUT__':
+                extras.setdefault(cat, []).append((name, q, a))
+            else:
+                new_in_section.setdefault(target, []).append((name, cat, q, a))
     for c in extras:
         extras[c].sort(key=lambda x: -x[2])
+    return new_in_section, extras
+
+
+def build_dinein_extras(by_name, used_names, menu: Menu):
+    """向后兼容封装：只返回 extras 部分。新代码请用 route_unmatched_items。"""
+    _, extras = route_unmatched_items(by_name, used_names, menu)
     return extras
 
 
@@ -443,6 +462,9 @@ def build_sheet(ws, shop_name, src, menu: Menu):
     # 加料专用拆分
     addon_lookup = precompute_addon_split(src, menu)
 
+    # 一次性路由未匹配项（🆕新菜进 menu sections，菜單外的进 extras）
+    new_in_section, extras = route_unmatched_items(by_name, used_names, menu)
+
     # 各分类(按金额降序)
     for cat, items in menu_sections:
         is_addon = menu.addon_section and cat == menu.addon_section
@@ -456,6 +478,10 @@ def build_sheet(ws, shop_name, src, menu: Menu):
             else:
                 q, a = get_dinein_sales(pos_names, by_name)
                 items_with_sales.append((name, price, unit, q, a))
+        # 追加路由到本分类的🆕新菜
+        if not is_addon:
+            for n, _pcat, q, a in new_in_section.get(cat, []):
+                items_with_sales.append((f'🆕 {n}', '', '', q, a))
         items_with_sales.sort(key=lambda x: -x[4])
 
         start = current_row_dinein
@@ -470,8 +496,7 @@ def build_sheet(ws, shop_name, src, menu: Menu):
             merge_ranges.append(f'B{start}:B{current_row_dinein-1}')
         current_row_dinein += 1  # 空一行
 
-    # 堂食菜單外
-    extras = build_dinein_extras(by_name, used_names, menu.drop_categories)
+    # 堂食菜單外（extras 已由上面 route_unmatched_items 算好）
     if extras:
         for col in range(2, 8):
             ws.cell(row=current_row_dinein, column=col).fill = LIGHT_GRAY
@@ -589,6 +614,9 @@ def build_preview_data(shop_name, src, menu: Menu):
     # 加料专用拆分（仅四季芬芳目前使用 addon_categories+addon_section）
     addon_lookup = precompute_addon_split(src, menu)
 
+    # 一次性算好未匹配项的去向：哪些菜单分类要插🆕新菜、哪些进菜單外
+    new_in_section, extras = route_unmatched_items(by_name, used_names, menu)
+
     menu_sections = []
     for cat, items_raw in menu_iter:
         rows = []
@@ -608,10 +636,15 @@ def build_preview_data(shop_name, src, menu: Menu):
                 rows.append({'name': name, 'price': price, 'unit': unit,
                              'qty': q, 'amt': a,
                              'merged': variants if len(variants) > 1 else []})
+            # 插 🆕 新菜：菜单未列、但 cat_map/force_cat 路由到本分类的项目
+            for n, pos_cat, q, a in new_in_section.get(cat, []):
+                rows.append({'name': n, 'price': '', 'unit': '',
+                             'qty': q, 'amt': a,
+                             'is_new': True, 'pos_cat': pos_cat,
+                             'merged': []})
             rows.sort(key=lambda x: -x['amt'])
         menu_sections.append({'cat': cat, 'items': rows})
 
-    extras = build_dinein_extras(by_name, used_names, menu.drop_categories)
     extras_sections = [
         {'cat': c, 'items': [
             {'name': menu.pos_aliases.get(n, n), 'qty': q, 'amt': a}
@@ -684,6 +717,9 @@ def build_shop_block_data(shop_name, src, menu: Menu):
     else:
         menu_iter = items_patched
 
+    # 一次性路由未匹配项：新菜进所属菜单分类(🆕)，菜單外的进 extras
+    new_in_section, extras = route_unmatched_items(by_name, used_names, menu)
+
     # 菜单分类：保持菜单声明顺序（与官方菜单 PDF 一致），
     # 这样多店并排时同一行就是同一个分类，便于横向比较销量。
     # 分类内的菜品仍按金额降序（卖得好的排前面）。
@@ -702,13 +738,16 @@ def build_shop_block_data(shop_name, src, menu: Menu):
                 if q == 0 and a == 0:
                     continue
                 rows.append({'name': name, 'qty': q, 'amt': a})
+        # 追加路由进本分类的🆕新菜（菜单未列）
+        if not is_addon:
+            for n, _pcat, q, a in new_in_section.get(cat, []):
+                rows.append({'name': f'🆕 {n}', 'qty': q, 'amt': a, 'is_new': True})
         if not rows:
             continue
         rows.sort(key=lambda r: -r['amt'])
         blocks.append({'cat': cat, 'kind': 'menu', 'rows': rows})
 
-    # 堂食菜單外
-    extras = build_dinein_extras(by_name, used_names, menu.drop_categories)
+    # 堂食菜單外（extras 已由上面 route_unmatched_items 算好）
     for src_cat in _sort_extras_cats(extras):
         rows = [{'name': menu.pos_aliases.get(n, n), 'qty': q, 'amt': a}
                 for n, q, a in extras[src_cat]]
@@ -1014,7 +1053,14 @@ def compute_stats(src, menu: Menu, shop_name: str = None):
             if q > 0 or a > 0:
                 matched_items += 1
 
-    extras = build_dinein_extras(by_name, used, menu.drop_categories)
+    # 新菜（路由进 menu sections 但菜单未列）+ 菜單外（route → '__OUT__'）
+    new_in_section, extras = route_unmatched_items(by_name, used, menu)
+    new_q = sum(x[2] for v in new_in_section.values() for x in v)
+    new_a = sum(x[3] for v in new_in_section.values() for x in v)
+    # 新菜计入 dinein 总数（呈现在菜单分类内，业务上属"堂食菜单内"销量）
+    dinein_q += new_q
+    dinein_a += new_a
+
     extras_q = sum(x[1] for v in extras.values() for x in v)
     extras_a = sum(x[2] for v in extras.values() for x in v)
 
@@ -1045,6 +1091,8 @@ def compute_stats(src, menu: Menu, shop_name: str = None):
         'menu_matched':  matched_items,
         'dinein_qty':    dinein_q,
         'dinein_amt':    dinein_a,
+        'new_qty':       new_q,           # 🆕 新菜数量（已含在 dinein_qty 内）
+        'new_amt':       new_a,
         'extras_qty':    extras_q,
         'extras_amt':    extras_a,
         'delivery_qty':  dlv_q,

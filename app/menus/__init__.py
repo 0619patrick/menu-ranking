@@ -9,6 +9,7 @@
 """
 from .base import Menu
 from . import tiantian
+from . import tiantian_cn
 from . import acheng
 from . import taicai
 from . import sijifenfang
@@ -18,10 +19,11 @@ from . import sijifenfang
 
 
 MENUS = {
-    'tiantian':    tiantian.menu,
-    'acheng':      acheng.menu,
-    'taicai':      taicai.menu,
-    'sijifenfang': sijifenfang.menu,
+    'tiantian':     tiantian.menu,
+    'tiantian_cn':  tiantian_cn.menu,
+    'acheng':       acheng.menu,
+    'taicai':       taicai.menu,
+    'sijifenfang':  sijifenfang.menu,
     # 'yizheng':      yizheng.menu,
 }
 
