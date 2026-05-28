@@ -268,7 +268,16 @@ function updateRemoveButtons() {
   });
 }
 
-document.getElementById('add-shop-btn').onclick = () => addShop();
+document.getElementById('add-shop-btn').onclick = () => {
+  // 跟随当前餐厅 tab：避免在「阿城」tab 上点加店但默认套了 tiantian 菜单的 bug
+  // 取当前 tab 第一家店的 pos/rest 作为默认（覆盖内地店用 *_cn 的情况）
+  const groups = QS_STORES_BY_RESTAURANT[currentRestaurant] || {};
+  const first = Object.values(groups).flat()[0] || {};
+  const rest = first.rest || currentRestaurant;
+  const pos  = first.pos  || 'canyinwang';
+  const region = Object.keys(groups)[0] || '香港';
+  addShop('', rest, pos, region);
+};
 
 // ===== 餐厅 + 快速选店 =====
 
