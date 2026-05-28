@@ -31,7 +31,7 @@ from app.menus import get_menu
 app = Flask(__name__,
             template_folder='app/templates',
             static_folder='app/static')
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB 上限
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB 上限（7-10 家店混传留余量）
 app.config['TEMPLATES_AUTO_RELOAD'] = True   # 开发期: 改 HTML 后浏览器刷新即可, 无需重启 server
 
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
