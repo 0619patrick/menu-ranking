@@ -170,12 +170,27 @@ function escHtml(str) {
 
 // ===== 店铺卡片 =====
 
+// 餐廳预设：每个 = 一种 (菜单, POS) 组合。下拉一选, 自动设好 hidden restaurant+pos
+const RESTAURANT_PRESETS = [
+  { key: 'tiantian.canyinwang',    label: '天天（餐飲王）',       rest: 'tiantian',    pos: 'canyinwang' },
+  { key: 'tiantian.meituan',       label: '天天（美團）',          rest: 'tiantian',    pos: 'meituan'    },
+  { key: 'tiantian_cn.meituan',    label: '天天 Plus⁺ 内地（美團）', rest: 'tiantian_cn', pos: 'meituan'    },
+  { key: 'acheng.canyinwang',      label: '阿城鵝肉（餐飲王）',     rest: 'acheng',      pos: 'canyinwang' },
+  { key: 'acheng_cn.meituan',      label: '阿城鵝肉 内地（美團）',   rest: 'acheng_cn',   pos: 'meituan'    },
+  { key: 'sijifenfang.canyinwang', label: '四季芬芳（餐飲王）',     rest: 'sijifenfang', pos: 'canyinwang' },
+  { key: 'taicai.canyinwang',      label: '中環泰菜（餐飲王）',     rest: 'taicai',      pos: 'canyinwang' },
+];
+
 function createShopCard(idx, defaultName, restaurant, pos, region = '香港', month = null) {
   if (month == null) month = new Date().getMonth() + 1;  // 默认当前月
   const monthOpts = Array.from({length: 12}, (_, i) =>
     `<option value="${i+1}" ${i+1 === month ? 'selected' : ''}>${i+1}月</option>`).join('');
   const regionOpts = ['香港','内地'].map(r =>
     `<option value="${r}" ${r === region ? 'selected' : ''}>${r}</option>`).join('');
+  const restOpts = RESTAURANT_PRESETS.map(p => {
+    const sel = (p.rest === restaurant && p.pos === pos) ? 'selected' : '';
+    return `<option value="${p.key}" ${sel}>${p.label}</option>`;
+  }).join('');
   return `
     <div class="shop-card border border-gray-200 rounded-lg p-4" data-idx="${idx}">
       <input type="hidden" name="shop_restaurant_${idx}" value="${restaurant}">
@@ -184,12 +199,19 @@ function createShopCard(idx, defaultName, restaurant, pos, region = '香港', mo
         <span class="text-sm font-medium text-gray-700">店舖 ${idx + 1}</span>
         <button type="button" class="remove-shop-btn text-red-500 hover:text-red-700 text-sm" data-idx="${idx}">移除</button>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
+      <div class="grid grid-cols-1 md:grid-cols-8 gap-3">
         <div class="md:col-span-2">
           <label class="block text-xs text-gray-500 mb-1">店舖名稱</label>
           <input type="text" name="shop_name_${idx}" value="${defaultName}"
             placeholder="例: 太古" required
             class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs text-gray-500 mb-1">餐廳</label>
+          <select name="shop_preset_${idx}" data-idx="${idx}"
+            class="restaurant-select w-full px-2 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            ${restOpts}
+          </select>
         </div>
         <div class="md:col-span-1">
           <label class="block text-xs text-gray-500 mb-1">地區</label>
@@ -230,6 +252,20 @@ function attachShopEvents() {
     btn.onclick = function () {
       document.querySelector(`.shop-card[data-idx="${this.dataset.idx}"]`)?.remove();
       updateRemoveButtons();
+    };
+  });
+  // 餐廳下拉切换 → 同步隐藏的 restaurant_type + pos_type
+  document.querySelectorAll('.restaurant-select').forEach(sel => {
+    sel.onchange = function () {
+      const card = this.closest('.shop-card');
+      if (!card) return;
+      const idx = card.dataset.idx;
+      const preset = RESTAURANT_PRESETS.find(p => p.key === this.value);
+      if (!preset) return;
+      const restInput = card.querySelector(`input[name="shop_restaurant_${idx}"]`);
+      const posInput  = card.querySelector(`input[name="shop_pos_${idx}"]`);
+      if (restInput) restInput.value = preset.rest;
+      if (posInput)  posInput.value  = preset.pos;
     };
   });
   document.querySelectorAll('.file-input').forEach(input => {
