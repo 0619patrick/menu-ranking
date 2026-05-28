@@ -11,7 +11,7 @@
 """
 import pandas as pd
 
-from .base import PosAdapter
+from .base import PosAdapter, read_xlsx
 
 
 # 繁体列名 → 简体列名（部分门店餐飲王导出用繁体表头，如香港阿城 3 月）
@@ -33,7 +33,8 @@ class CanyinwangAdapter(PosAdapter):
     KEY = 'canyinwang'
 
     def load(self, file_obj):
-        df = pd.read_excel(file_obj)
+        # read_xlsx 自动用 calamine 引擎(Rust, 比 openpyxl 快 5-10 倍), 不可用时 fallback openpyxl
+        df = read_xlsx(file_obj)
         # 列名繁→简归一（如果文件用繁体表头）
         df = df.rename(columns=TW_TO_CN_COLS)
         df = df.dropna(subset=['项目名称'])

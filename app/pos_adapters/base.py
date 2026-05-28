@@ -15,6 +15,37 @@ import pandas as pd
 STANDARD_COLUMNS = ['项目名称', '分类', '数量', '金额']
 
 
+# ===== 探测最快的 xlsx 引擎（一次性，所有 adapter 共享）=====
+# pandas 2.2+ 配 python-calamine 可用 'calamine' 引擎（Rust 实现，比 openpyxl 快 5-10 倍）
+# 不可用就 fallback 到 openpyxl（pandas 默认）
+def _detect_xlsx_engine():
+    try:
+        import python_calamine  # noqa: F401
+        # 试读一个空 BytesIO，看 pandas 是否认 'calamine' 这个 engine 名
+        import io
+        try:
+            pd.read_excel(io.BytesIO(b''), engine='calamine')
+        except ValueError as e:
+            if 'Unknown engine' in str(e):
+                return None
+            return 'calamine'  # 其他错（如解析失败）= 引擎识别 OK
+        except Exception:
+            return 'calamine'
+        return 'calamine'
+    except ImportError:
+        return None
+
+
+XLSX_ENGINE = _detect_xlsx_engine()
+
+
+def read_xlsx(file_obj, **kwargs):
+    """带 calamine 加速的 pd.read_excel 包装。pandas 不认 calamine 时自动 fallback。"""
+    if XLSX_ENGINE:
+        kwargs.setdefault('engine', XLSX_ENGINE)
+    return pd.read_excel(file_obj, **kwargs)
+
+
 class PosAdapter(ABC):
     """所有 POS 适配器的基类"""
 

@@ -176,17 +176,28 @@ def preview():
     except Exception as e:
         return jsonify({'error': f'處理出錯: {e}'}), 500
 
-    shops_data = []
-    for s in specs:
+    # 并发处理多家店：pandas/calamine 读 xlsx 大部分时间在 C/Rust 里释放 GIL，
+    # 多线程能实打实并行。max_workers=2 与 gunicorn --threads 2 一致，
+    # 避免单请求把所有线程吃光、阻塞其他用户的请求。
+    from concurrent.futures import ThreadPoolExecutor
+
+    def process_one(s):
         try:
             src = load_source(io.BytesIO(s['file_bytes']), s['pos_type'])
             menu = get_menu(s['restaurant_type'])
-            data = build_preview_data(s['shop_name'], src, menu)
-            shops_data.append(data)
+            return ('ok', build_preview_data(s['shop_name'], src, menu))
         except Exception as e:
-            return jsonify({
-                'error': f'店鋪「{s["shop_name"]}」解析失敗: {e}',
-            }), 400
+            return ('err', f'店鋪「{s["shop_name"]}」解析失敗: {e}')
+
+    workers = min(len(specs), 2)
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        results = list(ex.map(process_one, specs))
+
+    shops_data = []
+    for status, payload in results:
+        if status == 'err':
+            return jsonify({'error': payload}), 400
+        shops_data.append(payload)
     return jsonify({'shops': shops_data})
 
 

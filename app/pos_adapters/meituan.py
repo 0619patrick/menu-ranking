@@ -18,7 +18,7 @@
 """
 import pandas as pd
 
-from .base import PosAdapter
+from .base import PosAdapter, read_xlsx
 
 
 COLUMN_MAP = {
@@ -35,7 +35,8 @@ class MeituanAdapter(PosAdapter):
 
     def load(self, file_obj):
         # 表头在第 3 行（index=2），只读「已销售」sheet
-        df = pd.read_excel(file_obj, sheet_name='已销售', header=2)
+        # read_xlsx 自动用 calamine(Rust, 5-10× 加速), 不可用时 fallback openpyxl
+        df = read_xlsx(file_obj, sheet_name='已销售', header=2)
 
         # 删除合计行（菜品名称 / 大类 任一为空）
         df = df.dropna(subset=['菜品名称'])
