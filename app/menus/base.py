@@ -131,9 +131,10 @@ class Menu:
     # 不必为每个同名大类单独写 cat_map。优先级低于显式 cat_map。
     # 例（天天）: POS大类「湯品/主食/甜品」自动归入菜单同名分类。
 
-    drop_zero_amount: bool = False
-    # 「丢弃金额为0的堂食行」：某项在某分类有销量但金额=0(钱已算进套餐)，剔除不计。
-    # 注意：四季芬芳的加料拆分(addon)故意用¥0行表达"套餐内含"，走单独路径不受此影响。
+    drop_zero_amount: bool = True
+    # 「丢弃金额为0的堂食行」：某项有销量但金额=0(白送的赠品/打卡/钱已算进套餐)，剔除不显示。
+    # 默认开启，对所有餐厅生效；个别店如需保留 ¥0 行可在 config.csv 写 drop_zero_amount,,0 关闭。
+    # 注意：四季芬芳的加料拆分(addon)故意用¥0行表达"套餐内含"，走单独路径(addon_lookup)不受此影响。
 
     def _menu_cat_names(self) -> set:
         names = getattr(self, '_cat_names_cache', None)
