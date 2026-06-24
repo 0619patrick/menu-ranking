@@ -91,6 +91,71 @@ class Menu:
     #   - 行不上黄底
     #   - POS 大类原名作为段标题旁的小灰字注解
 
+    route_rules: list = field(default_factory=list)
+    # 「按名字模式归类」规则（force_cat 的批量版，免去一个个列菜名）。
+    # 每条 = dict，可含: target(必填,目标分类) / cat(限定POS大类) /
+    #   startswith / contains / endswith（名字条件，可多个，全部满足才命中）。
+    # 优先级在精确 force_cat 之后、cat_map 之前；按列表顺序第一条命中即用。
+    # 例（阿城套餐价滷味）: {'target':'滷味','cat':'1人套餐','startswith':'滷鵝','contains':'$'}
+    #   —— POS大类「1人套餐」里、名字以「滷鵝」开头且含「$」的项目，全部归「滷味」。
+
+    extras_merge: dict = field(default_factory=dict)
+    # 「菜單外大类合并」：{ 源POS大类: 目标显示大类 }。
+    # 菜單外里源大类的项目改挂到目标大类下、同名项按销量求和(目标大类可以是已存在的另一个菜單外大类)。
+    # 例（天天）: {'7點後招牌海南雞飯': '午餐'} —— 7點後那段并入午餐，同名菜(午A/午B…)数量金额相加。
+
+    extras_item_merge: dict = field(default_factory=dict)
+    # 「按菜名的菜單外路由」：{ 菜名: 目标显示大类 }，优先级高于 extras_merge(按大类)。
+    # 用于某道菜不该跟着它的大类走。例（天天）: {'黃金限定2人套餐328': '套餐'}
+    #   —— 它虽在「7點後招牌海南雞飯」(整体并入午餐)，但按名归到「套餐」段，与同名项合并。
+
+    strip_tokens: set = field(default_factory=set)
+    # 「匹配时忽略的描述词」：匹配前先把这些子串从 POS 项目名称里删掉，
+    # 让加了无关后缀的项目能对上菜单标准名。
+    # 例（天天）: {'（不能走甜）'} —— 「凍-檸檬薏米水（不能走甜）」去掉后缀=「凍-檸檬薏米水」，匹配上菜单。
+
+    strip_regex: set = field(default_factory=set)
+    # 「条件式正则去后缀」：删掉匹配部分后『能对上某菜单POS写法 或 数据里已存在的干净名』才删，否则保留。
+    # 用于变化的后缀(如平台价)，只在"干净版存在、可合并"时才去，避免误删孤立的带价名。
+    # 例（天天）: {'=?\\d+$'} —— 龍眼冰=20→龍眼冰(菜单有,合并)；星洲甄選2人餐499→星洲甄選2人餐(数据有干净版,合并)；
+    #   獅城兩人套餐599→不变(无干净版)。
+
+    pos_renames: dict = field(default_factory=dict)
+    # 「统一写法」：{ 原POS写法: 统一成的名字 }。匹配/聚合前先把原写法整体改名，
+    # 用于错字、字序颠倒、旧名等无法用去后缀处理的情况（不限菜单内/外，改完一起算）。
+    # 例（天天）: {'鮮無果花燉雞湯':'鮮無花果燉雞湯', '鮮無花果雞湯':'鮮無花果燉雞湯'}
+    #   —— 两个错写的「無花果燉雞湯」统一成正确写法后，在「湯品」里合并成一行。
+
+    auto_match_category: bool = False
+    # 「POS大类同名归菜单」：未匹配项若其 POS 大类名 == 某菜单分类名，自动归入该分类(🆕)，
+    # 不必为每个同名大类单独写 cat_map。优先级低于显式 cat_map。
+    # 例（天天）: POS大类「湯品/主食/甜品」自动归入菜单同名分类。
+
+    drop_zero_amount: bool = False
+    # 「丢弃金额为0的堂食行」：某项在某分类有销量但金额=0(钱已算进套餐)，剔除不计。
+    # 注意：四季芬芳的加料拆分(addon)故意用¥0行表达"套餐内含"，走单独路径不受此影响。
+
+    def _menu_cat_names(self) -> set:
+        names = getattr(self, '_cat_names_cache', None)
+        if names is None:
+            names = {cat for cat, _ in self.items}
+            self._cat_names_cache = names
+        return names
+
+    def _match_rule(self, name: str, pos_cat: str):
+        """返回第一条命中的 route_rule 的目标分类；都不中返回 None。"""
+        for r in self.route_rules:
+            if r.get('cat') and pos_cat != r['cat']:
+                continue
+            if r.get('startswith') and not name.startswith(r['startswith']):
+                continue
+            if r.get('contains') and r['contains'] not in name:
+                continue
+            if r.get('endswith') and not name.endswith(r['endswith']):
+                continue
+            return r.get('target')
+        return None
+
     def route_new_item(self, name: str, pos_cat: str) -> Optional[str]:
         """
         判断某 POS 菜（未匹配菜单的新菜）应去向。
@@ -101,11 +166,12 @@ class Menu:
 
         优先级:
           1. drop_names 命中 → DROP
-          2. force_cat 命中 → 用强制分类（最高优先，纠正 POS 错放）
-          3. set_keywords 命中 → __OUT__（套餐字样的统一进菜單外，
+          2. force_cat 命中 → 用强制分类（精确菜名，最高优先，纠正 POS 错放）
+          3. route_rules 命中 → 用规则目标分类（按名字模式批量归类）
+          4. set_keywords 命中 → __OUT__（套餐字样的统一进菜單外，
              即便 cat_map 把大类映到具体菜单分类也强制覆盖）
-          4. cat_map → 取大类映射结果（默认 __OUT__）
-          5. 若 (4) = __OUT__ 且菜名是「单品饭/面」(含 main_keywords) →
+          5. cat_map → 取大类映射结果（默认 __OUT__）
+          6. 若 (5) = __OUT__ 且菜名是「单品饭/面」(含 main_keywords) →
              改路由到 main_section（套餐分类下的单品菜归主食）
         """
         if name in self.drop_names:
@@ -113,11 +179,21 @@ class Menu:
         # force_cat 最高优先级：对具体菜的精确纠正（如 酥炸椒盐板豆腐 强制归前菜）
         if name in self.force_cat:
             return self.force_cat[name]
+        # route_rules：按名字模式批量归类（force_cat 的模式版），优先于 cat_map
+        rule_target = self._match_rule(name, pos_cat)
+        if rule_target:
+            return rule_target
         # set_keywords：套餐字样统一进菜单外（不管 cat_map 怎么映）
         if self.set_keywords and any(k in name for k in self.set_keywords):
             return '__OUT__'
-        # cat_map：POS 大类 → 菜单分类（找不到默认 __OUT__）
-        target = self.cat_map.get(pos_cat, '__OUT__')
+        # cat_map：POS 大类 → 菜单分类（显式优先）
+        target = self.cat_map.get(pos_cat)
+        if target is None:
+            # auto_match_category：POS 大类名本身就是某菜单分类名 → 归该分类
+            if self.auto_match_category and pos_cat in self._menu_cat_names():
+                target = pos_cat
+            else:
+                target = '__OUT__'
         # 套餐分类下的单品饭/面优先归主食系列
         if (target == '__OUT__' and self.main_section
                 and any(k in name for k in self.main_keywords)):

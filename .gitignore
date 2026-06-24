@@ -9,6 +9,7 @@ env/
 *.swp
 .vscode/
 .idea/
+.claude/
 uploads/*.xlsx
 outputs/*.xlsx
 !.gitkeep

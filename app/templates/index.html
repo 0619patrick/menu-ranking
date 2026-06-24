@@ -154,11 +154,18 @@
 
 <script>
 let shopCount = 0;
-let mergeCounter = 0;
+let mergePrefix = 0;           // 当前正在渲染的店索引，拼进 ▶ id（避免跨店撞 id）
+let openMerges = new Set();    // 当前展开着的 ▶ 面板 id（重渲染时保持展开，不收起）
+let lastShops = [];            // 服务器返回的原始预览数据（未拆分）；客户端在此基础上派生拆分视图
 
 // 用户在 ▶ 拆分里点 × 删的行: { shopName: Set("posName||cat") }
 // 每次重新生成预览都清空; /generate 时按店发回后端
 let shopDeletions = {};
+
+// 用户在 ▶ 拆分里点 ×「拆回原大类」的行: { shopName: Set("posName||cat") }
+// 后端会把这些项从合并里摘出来、单独放回它原来的 POS 大类段。
+// 点 × 会自动重拉一次预览; 重新点「預覽」按钮则清空、从头来。
+let shopUnmerges = {};
 
 // ===== 工具函数 =====
 
@@ -168,6 +175,27 @@ function escHtml(str) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// 把字符串安全地塞进 onclick="fn('...')" 里的 JS 单引号字符串
+function jsAttr(str) {
+  return String(str)
+    .replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// 内容哈希：给 ▶ 面板生成「按内容(大类+菜名)」的稳定 id，排序/重排后不变
+function hashStr(s) {
+  let h = 0;
+  s = String(s);
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+// 「拆回原大类」那一行的标签 + 恢復按钮（菜單外段、大MENU段都用它）
+function unmergedBadge(item, sn) {
+  return ` <span class="text-[10px] bg-amber-300 text-amber-900 px-1 py-0.5 rounded ml-1 whitespace-nowrap">↩ 已拆回此大类</span>`
+    + `<button type="button" class="text-blue-600 hover:text-blue-800 text-xs underline ml-1 whitespace-nowrap"`
+    + ` title="恢復合併：放回原来的合并项" onclick="remergeItem('${jsAttr(sn)}','${jsAttr(item.name)}','${jsAttr(item._cat || '')}')">恢復合併</button>`;
+}
+
 // ===== 店铺卡片 =====
 
 // 餐廳预设：每个 = 一种 (菜单, POS) 组合。下拉一选, 自动设好 hidden restaurant+pos
@@ -175,10 +203,14 @@ const RESTAURANT_PRESETS = [
   { key: 'tiantian.canyinwang',    label: '天天（餐飲王）',       rest: 'tiantian',    pos: 'canyinwang' },
   { key: 'tiantian.meituan',       label: '天天（美團）',          rest: 'tiantian',    pos: 'meituan'    },
   { key: 'tiantian_cn.meituan',    label: '天天 Plus⁺ 内地（美團）', rest: 'tiantian_cn', pos: 'meituan'    },
-  { key: 'acheng.canyinwang',      label: '阿城鵝肉（餐飲王）',     rest: 'acheng',      pos: 'canyinwang' },
-  { key: 'acheng_cn.meituan',      label: '阿城鵝肉 内地（美團）',   rest: 'acheng_cn',   pos: 'meituan'    },
+  { key: 'acheng.canyinwang',         label: '阿城鵝肉（餐飲王）（淘大/太古）', rest: 'acheng',         pos: 'canyinwang' },
+  { key: 'acheng_donghui.canyinwang', label: '阿城鵝肉（餐飲王）（东涌）',     rest: 'acheng_donghui', pos: 'canyinwang' },
+  { key: 'acheng_cn.meituan',         label: '阿城鵝肉 内地（美團）',         rest: 'acheng_cn',      pos: 'meituan'    },
   { key: 'sijifenfang.canyinwang', label: '四季芬芳（餐飲王）',     rest: 'sijifenfang', pos: 'canyinwang' },
   { key: 'taicai.canyinwang',      label: '中環泰菜（餐飲王）',     rest: 'taicai',      pos: 'canyinwang' },
+  // 沙田泰菜 Here Thai Market：与中環是两套独立菜单。POS 类型待定，先放餐飲王/美團两个预设供选择
+  { key: 'taicai_shatian.canyinwang', label: '沙田泰菜（餐飲王）',   rest: 'taicai_shatian', pos: 'canyinwang' },
+  { key: 'taicai_shatian.meituan',    label: '沙田泰菜（美團）',     rest: 'taicai_shatian', pos: 'meituan'    },
 ];
 
 function createShopCard(idx, defaultName, restaurant, pos, region = '香港', month = null) {
@@ -344,9 +376,11 @@ const QS_STORES_BY_RESTAURANT = {
   },
   'acheng': {           // 阿城鵝肉
     '香港': [
+      // 淘大/太古：通用17类（共用 acheng）。太古 +10% 服務費（不影响菜单，服務費行已在 drop 规则丢弃）
       { label: '淘大', name: '香港阿城淘大', pos: 'canyinwang' },
       { label: '太古', name: '香港阿城太古', pos: 'canyinwang' },
-      { label: '東涌', name: '香港阿城東涌', pos: 'canyinwang' },
+      // 東涌(東薈城)：18类 = 通用17类 + 手作系列(刨冰)，用 acheng_donghui（继承 acheng）
+      { label: '東涌', name: '香港阿城東涌', pos: 'canyinwang', rest: 'acheng_donghui' },
     ],
     '内地': [
       // 深圳店用 acheng_cn 菜单（简体, 卤味分3档+手作独立）, POS 美團
@@ -362,6 +396,8 @@ const QS_STORES_BY_RESTAURANT = {
   'taicai': {           // 泰菜
     '香港': [
       { label: '中環', name: '香港泰菜中環', pos: 'canyinwang' },
+      // 沙田泰菜走自己的菜单 taicai_shatian；POS 待定，先默认餐飲王，确定后可在「餐廳」下拉改美團
+      { label: '沙田', name: '香港泰菜沙田', rest: 'taicai_shatian', pos: 'canyinwang' },
     ],
   },
 };
@@ -471,6 +507,16 @@ function buildFormData() {
         });
         formData.append(`deletions_${count}`, JSON.stringify(list));
       }
+
+      // 用户在 ▶ 里点 × 拆回原大类的行
+      const uns = shopUnmerges[sn];
+      if (uns && uns.size > 0) {
+        const ulist = Array.from(uns).map(key => {
+          const [name, cat] = key.split('||');
+          return { name, cat };
+        });
+        formData.append(`unmerges_${count}`, JSON.stringify(ulist));
+      }
       count++;
     }
   });
@@ -480,15 +526,14 @@ function buildFormData() {
 
 // ===== 表单提交 → 预览 =====
 
-document.getElementById('upload-form').onsubmit = async function (e) {
-  e.preventDefault();
+// 拉取 /preview 并渲染。scroll: 首次预览滚动到结果; 拆回原大类重拉时保持当前位置。
+async function fetchPreview({ scroll = false } = {}) {
   const errorBox = document.getElementById('error-box');
   const loading = document.getElementById('loading');
   const submitBtn = document.getElementById('submit-btn');
   const previewSection = document.getElementById('preview-section');
 
   errorBox.classList.add('hidden');
-  previewSection.classList.add('hidden');
   loading.classList.remove('hidden');
   document.getElementById('loading-msg').textContent = '正在處理數據，請稍候...';
   submitBtn.disabled = true;
@@ -500,7 +545,7 @@ document.getElementById('upload-form').onsubmit = async function (e) {
     if (!resp.ok) throw new Error(data.error || '伺服器錯誤');
     renderPreview(data.shops);
     previewSection.classList.remove('hidden');
-    previewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (scroll) previewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     document.getElementById('error-msg').textContent = err.message;
     errorBox.classList.remove('hidden');
@@ -509,6 +554,16 @@ document.getElementById('upload-form').onsubmit = async function (e) {
     submitBtn.disabled = false;
     submitBtn.classList.remove('opacity-60', 'cursor-not-allowed');
   }
+}
+
+document.getElementById('upload-form').onsubmit = async function (e) {
+  e.preventDefault();
+  // 点「預覽」= 从头开始：清掉之前的拆回原大类标记 + ▶ 展开状态
+  shopDeletions = {};
+  shopUnmerges = {};
+  openMerges = new Set();
+  document.getElementById('preview-section').classList.add('hidden');
+  await fetchPreview({ scroll: true });
 };
 
 // ===== 下载 Excel =====
@@ -556,8 +611,9 @@ function renderPreview(shopsData) {
   const tabsEl = document.getElementById('shop-tabs');
   const contentEl = document.getElementById('preview-content');
   contentEl.innerHTML = '';
-  mergeCounter = 0;
-  shopDeletions = {};   // 重新预览即清空之前的 × 删除标记
+  lastShops = shopsData;   // 存原始数据，后续点 × 拆分在客户端基于它派生
+  // 注: shopUnmerges / openMerges 的清空放在「預覽」按钮里，
+  // 这样点 × 拆回原大类时（客户端重渲染）不会丢掉已累积的拆分/展开状态。
 
   if (shopsData.length > 1) {
     tabsEl.classList.remove('hidden');
@@ -574,9 +630,55 @@ function renderPreview(shopsData) {
     const div = document.createElement('div');
     div.id = `shop-tab-${i}`;
     if (i !== 0) div.classList.add('hidden');
-    div.innerHTML = renderShopPreview(shop);
+    div.innerHTML = renderShopPreview(deriveShopView(shop), i);
     contentEl.appendChild(div);
   });
+}
+
+// 只重渲染某一家店（点 × 拆分 / 恢復后用，避免整页重拉）
+function rerenderShop(shopName) {
+  const idx = lastShops.findIndex(s => s.shop_name === shopName);
+  if (idx < 0) return;
+  const div = document.getElementById('shop-tab-' + idx);
+  if (div) div.innerHTML = renderShopPreview(deriveShopView(lastShops[idx]), idx);
+}
+
+// 基于原始数据 + shopUnmerges 派生出「拆分后」的视图（纯客户端，不改 lastShops）：
+//  - 被拆的来源仍留在 ▶ 里（标记 _struck，显示删除线 + 恢復），并从父项减去其销量；
+//  - 同时把它作为独立一行放回它原来的 POS 大类段（没有就新建），标记 _unmerged。
+function deriveShopView(shop) {
+  const view = JSON.parse(JSON.stringify(shop));
+  const unset = shopUnmerges[shop.shop_name];
+  if (!unset || unset.size === 0) return view;
+  const relocated = [];
+  function strip(items) {
+    items.forEach(item => {
+      (item.merged || []).forEach(v => {
+        if (unset.has(v.name + '||' + (v.cat || ''))) {
+          v._struck = true;
+          item.qty -= v.qty;
+          item.amt -= v.amt;
+          relocated.push({ name: v.name, cat: v.cat || '', qty: v.qty, amt: v.amt });
+        }
+      });
+    });
+  }
+  if (view.tea) strip(view.tea);
+  view.menu.forEach(sec => strip(sec.items));
+  view.extras.forEach(sec => strip(sec.items));
+  // 落回原大类段：这个大类已存在（大MENU 或 菜單外都算）就并进去，不另起同名段；
+  // 真不存在才在菜單外新建一段。
+  const touched = new Set();
+  relocated.forEach(r => {
+    const row = { name: r.name, qty: r.qty, amt: r.amt, merged: [], _unmerged: true, _cat: r.cat };
+    let sec = view.menu.find(s => s.cat === r.cat)      // 优先并进已存在的菜单大类
+           || view.extras.find(s => s.cat === r.cat);   // 再看已有的菜單外段
+    if (!sec) { sec = { cat: r.cat, items: [] }; view.extras.push(sec); }  // 都没有 → 新建菜單外段
+    sec.items.push(row);
+    touched.add(sec);
+  });
+  touched.forEach(sec => sec.items.sort((a, b) => b.amt - a.amt));  // 与导出一致：段内按金额降序
+  return view;
 }
 
 function switchTab(idx) {
@@ -589,7 +691,8 @@ function switchTab(idx) {
   });
 }
 
-function renderShopPreview(shopData) {
+function renderShopPreview(shopData, shopIdx) {
+  mergePrefix = shopIdx || 0;   // ▶ id 用这家店的索引做前缀，避免跨店撞 id
   return `
     <div class="overflow-x-auto">
       <div class="grid grid-cols-[1fr_4px_1fr] gap-3 pb-2 min-w-[920px]">
@@ -611,14 +714,14 @@ function renderDineinTable(shopData) {
   const sn = shopData.shop_name;
 
   shopData.tea.forEach((item, i) => {
-    rows += dineinRow(item, i + 1, i === 0 ? '茶位' : '', 'bg-yellow-50', sn);
+    rows += dineinRow(item, i + 1, i === 0 ? '茶位' : '', 'bg-yellow-50', sn, '茶位');
   });
 
   rows += `<tr><td colspan="5" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-blue-100">大MENU</td></tr>`;
 
   shopData.menu.forEach(section => {
     section.items.forEach((item, i) => {
-      rows += dineinRow(item, i + 1, i === 0 ? section.cat : '', '', sn);
+      rows += dineinRow(item, i + 1, i === 0 ? section.cat : '', '', sn, section.cat);
     });
     rows += `<tr><td colspan="5" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
   });
@@ -627,12 +730,17 @@ function renderDineinTable(shopData) {
     rows += `<tr><td colspan="5" class="px-2 py-1 text-xs font-bold text-center border border-gray-200 bg-gray-300">堂食菜單外（POS有銷售但菜單未列）</td></tr>`;
     shopData.extras.forEach(section => {
       section.items.forEach((item, i) => {
+        // 这一行是不是用户从合并里「拆回」来的？是的话高亮 + 给个「恢復合併」按钮
+        const isUnmerged = item._unmerged;
+        const cellBg = isUnmerged ? 'bg-amber-100' : '';   // 菜單外底色改白，靠标题行分割
+        const nameCell = buildMergedNameCell(item, sn, section.cat,
+          { suffixHtml: isUnmerged ? unmergedBadge(item, sn) : '' });
         rows += `<tr>
-          <td class="${TD} bg-gray-50 text-gray-400">${escHtml(i === 0 ? section.cat : '')}</td>
-          <td class="${TD} bg-gray-50 text-gray-400">${i + 1}</td>
-          <td class="${TDL} bg-gray-50 text-gray-400 italic min-w-[180px]">${escHtml(item.name)}</td>
-          <td class="${TD} bg-gray-50 text-gray-400">${item.qty}</td>
-          <td class="${TD} bg-gray-50 text-gray-400">${item.amt.toLocaleString()}</td>
+          <td class="${TD} ${cellBg} text-gray-900">${escHtml(i === 0 ? section.cat : '')}</td>
+          <td class="${TD} ${cellBg} text-gray-900">${i + 1}</td>
+          <td class="${TDL} ${cellBg} text-gray-900 min-w-[180px]">${nameCell}</td>
+          <td class="${TD} ${cellBg} text-gray-900">${item.qty}</td>
+          <td class="${TD} ${cellBg} text-gray-900">${item.amt.toLocaleString()}</td>
         </tr>`;
       });
       rows += `<tr><td colspan="5" class="h-2 bg-gray-50 border-x border-gray-200"></td></tr>`;
@@ -652,37 +760,73 @@ function renderDineinTable(shopData) {
 }
 
 // 公共: 名字单元格 (合并项时带 ▶ 展开 + × 删除/恢復 切换按钮)
-function buildMergedNameCell(item, shopName) {
-  if (!item.merged || item.merged.length < 2) {
-    return escHtml(item.name);
+function buildMergedNameCell(item, shopName, ctxKey, opts) {
+  // prefixHtml/suffixHtml 会渲染在「菜名」紧邻处（🆕标、POS分类、恢復按钮等），
+  // 这样即使有 ▶ 展开结构，这些标签也跟菜名在同一行，不会被挤到上/下面。
+  const prefixHtml = (opts && opts.prefixHtml) || '';
+  const suffixHtml = (opts && opts.suffixHtml) || '';
+  // 有 merged 明细就画 ▶（后端只在"该合并"时才发明细：多来源，或单来源但 POS 名≠菜单名）
+  if (!item.merged || item.merged.length < 1) {
+    return `${prefixHtml}${escHtml(item.name)}${suffixHtml}`;
   }
-  const id = 'mg' + (++mergeCounter);
+  // 稳定 id：店索引 + 内容哈希(段大类+菜名)，排序/重排后不变，保持展开状态不错位
+  const id = `mg-${mergePrefix}-${hashStr((ctxKey || '') + '||' + (item.name || ''))}`;
   const sn = escHtml(shopName || '');
+  const expanded = openMerges.has(id);
   const variantsHtml = item.merged.map((v, vIdx) => {
     const catLabel = v.cat ? `（${escHtml(v.cat)}）` : '';
     const vid = `${id}-v${vIdx}`;
     const safeName = escHtml(v.name);
     const safeCat  = escHtml(v.cat || '');
+    const up = v.qty ? +(v.amt / v.qty).toFixed(1) : 0;   // 单价=金额÷数量，用于核对合并对不对
+    const struck = v._struck;
+    const strikeCls = struck ? ' line-through opacity-50' : '';
+    // 已拆出的来源：留在 ▶ 里划掉 + 给「恢復」按钮；未拆的：给红 × 拆出
+    const btn = struck
+      ? `<button type="button" class="v-toggle-btn text-blue-500 hover:text-blue-700 text-xs leading-none px-1 flex-shrink-0 text-right whitespace-nowrap"
+              title="恢復合併：把这一项放回合并里"
+              onclick="remergeItem('${sn}','${jsAttr(v.name)}','${jsAttr(v.cat || '')}')">恢復</button>`
+      : `<button type="button" class="v-toggle-btn text-red-400 hover:text-red-600 text-xs leading-none px-1 flex-shrink-0 w-8 text-right"
+              title="拆回原大类：把这一项从合并里摘出来，单独放回它原来的 POS 大类（${safeCat || '无原大类'}）"
+              onclick="unmergeVariant('${sn}','${vid}')">×</button>`;
     return `<div id="${vid}" class="merge-variant flex items-start justify-between gap-2 py-0.5"
                  data-qty="${v.qty}" data-amt="${v.amt}"
                  data-name="${safeName}" data-cat="${safeCat}">
       <span class="text-gray-300 v-prefix">└</span>
-      <span class="v-label flex-1 text-gray-500">${safeName}${catLabel}</span>
-      <span class="v-stats text-gray-400 whitespace-nowrap">${v.qty}份 ¥${v.amt.toLocaleString()}</span>
-      <button type="button" class="v-toggle-btn text-red-400 hover:text-red-600 text-xs leading-none px-1 flex-shrink-0 w-8 text-right"
-              title="刪除此行（不算進總計，下載 Excel 也會排除）"
-              onclick="toggleVariantDelete('${sn}','${vid}')">×</button>
+      <span class="v-label flex-1 text-gray-500${strikeCls}">${safeName}${catLabel}</span>
+      <span class="v-stats text-gray-400 whitespace-nowrap${strikeCls}"><span class="text-blue-600">單價¥${up.toLocaleString()}</span>　${v.qty}份 ¥${v.amt.toLocaleString()}</span>
+      ${btn}
     </div>`;
   }).join('');
   return `
     <div class="flex items-start gap-1">
       <button class="text-blue-500 hover:text-blue-700 flex-shrink-0 text-xs leading-4 mt-0.5"
-        onclick="toggleMerge(this,'${id}')">▶</button>
-      <span>${escHtml(item.name)}</span>
+        onclick="toggleMerge(this,'${id}')">${expanded ? '▼' : '▶'}</button>
+      <span>${prefixHtml}${escHtml(item.name)}${suffixHtml}</span>
     </div>
-    <div id="${id}" class="hidden mt-1 pl-1 text-xs merge-detail">
+    <div id="${id}" class="${expanded ? '' : 'hidden '}mt-1 pl-1 text-xs merge-detail">
       ${variantsHtml}
     </div>`;
+}
+
+// 点 × =「拆回原大类」：记到 shopUnmerges，客户端重渲染这家店。
+// 重渲染后：① 这一项仍留在 ▶ 里（划掉 + 带「恢復」）；② 同时作为独立一行出现在
+// 它原来的 POS 大类段（没有就新建，浅黄高亮）。可见、可逆、不丢展开状态。
+function unmergeVariant(shopName, variantId) {
+  const el = document.getElementById(variantId);
+  if (!el) return;
+  const name = el.dataset.name;
+  const cat  = el.dataset.cat;
+  if (!cat) { alert('这一项没有原始 POS 大类，无法拆回'); return; }
+  if (!shopUnmerges[shopName]) shopUnmerges[shopName] = new Set();
+  shopUnmerges[shopName].add(name + '||' + cat);
+  rerenderShop(shopName);
+}
+
+// 点「恢復」/「恢復合併」：取消拆出，重新放回合并里
+function remergeItem(shopName, name, cat) {
+  if (shopUnmerges[shopName]) shopUnmerges[shopName].delete(name + '||' + cat);
+  rerenderShop(shopName);
 }
 
 // × / 恢復 点击切换: 标记/取消标记 + 更新视觉 + 累加/去除 shopDeletions + 重算父行
@@ -728,7 +872,7 @@ function recalcParentRow(variantEl) {
   if (!container) return;
   let sumQ = 0, sumA = 0;
   container.querySelectorAll('.merge-variant').forEach(v => {
-    if (v.dataset.deleted === '1') return;
+    if (v.dataset.deleted === '1' || v.dataset.unmerged === '1') return;
     sumQ += parseInt(v.dataset.qty, 10) || 0;
     sumA += parseInt(v.dataset.amt, 10) || 0;
   });
@@ -741,21 +885,25 @@ function recalcParentRow(variantEl) {
   cells[4].textContent = sumA.toLocaleString();
 }
 
-function dineinRow(item, rank, catLabel, bgClass, shopName) {
-  let nameCell = buildMergedNameCell(item, shopName);
+function dineinRow(item, rank, catLabel, bgClass, shopName, secCat) {
+  let prefix = '', suffix = '';
   // 加料段：免費套餐內含次數作为小灰标签拼在名字后面
   if (item.free_qty && item.free_qty > 0) {
-    nameCell += ` <span class="text-[10px] text-gray-500 bg-gray-100 px-1 py-0.5 rounded ml-1 whitespace-nowrap">套餐內含 ${item.free_qty}次</span>`;
+    suffix += ` <span class="text-[10px] text-gray-500 bg-gray-100 px-1 py-0.5 rounded ml-1 whitespace-nowrap">套餐內含 ${item.free_qty}次</span>`;
   }
-  // 🆕 路由进菜单分类的「菜单未列新菜」：名字前加🆕图标，整行浅黄底
-  if (item.is_new) {
-    nameCell = `<span class="text-[10px] bg-yellow-300 text-yellow-900 px-1 py-0.5 rounded mr-1 font-bold">🆕</span>${nameCell}`;
+  if (item._unmerged) {
+    // 拆回到这个（已存在的）菜单大类里的行：浅黄高亮 + 标签 + 恢復按钮
+    suffix += unmergedBadge(item, shopName);
+  } else if (item.is_new) {
+    // 🆕 路由进菜单分类的「菜单未列新菜」：名字前加🆕图标，整行浅黄底
+    prefix = `<span class="text-[10px] bg-yellow-300 text-yellow-900 px-1 py-0.5 rounded mr-1 font-bold">🆕</span>`;
     if (item.pos_cat) {
-      nameCell += ` <span class="text-[10px] text-gray-400 italic">(POS分类: ${escHtml(item.pos_cat)})</span>`;
+      suffix += ` <span class="text-[10px] text-gray-400 italic">(POS分类: ${escHtml(item.pos_cat)})</span>`;
     }
   }
+  const nameCell = buildMergedNameCell(item, shopName, secCat, { prefixHtml: prefix, suffixHtml: suffix });
 
-  const bg = item.is_new ? 'bg-yellow-50' : (bgClass || '');
+  const bg = item._unmerged ? 'bg-amber-100' : (item.is_new ? 'bg-yellow-50' : (bgClass || ''));
   return `<tr>
     <td class="${TD} ${bg}">${escHtml(catLabel)}</td>
     <td class="${TD} ${bg}">${rank}</td>
@@ -780,7 +928,7 @@ function renderDeliveryTable(shopData) {
         out += `<tr>
           <td class="${DTD}">${escHtml(i === 0 ? section.cat : '')}</td>
           <td class="${DTD}">${i + 1}</td>
-          <td class="${DTDL} min-w-[160px]">${buildMergedNameCell(item, sn)}</td>
+          <td class="${DTDL} min-w-[160px]">${buildMergedNameCell(item, sn, '外賣-' + section.cat)}</td>
           <td class="${DTD}">${item.qty}</td>
           <td class="${DTD}">${item.amt.toLocaleString()}</td>
         </tr>`;
@@ -809,7 +957,7 @@ function renderDeliveryTable(shopData) {
         rows += `<tr>
           <td class="${DTD}">${escHtml(i === 0 ? '補差價' : '')}</td>
           <td class="${DTD}">${i + 1}</td>
-          <td class="${DTDL} min-w-[160px]">${buildMergedNameCell(item, sn)}</td>
+          <td class="${DTDL} min-w-[160px]">${buildMergedNameCell(item, sn, '外賣補差價-' + p.platform)}</td>
           <td class="${DTD}">${item.qty}</td>
           <td class="${DTD}">${item.amt.toLocaleString()}</td>
         </tr>`;
@@ -837,6 +985,7 @@ function toggleMerge(btn, id) {
   const isHidden = detail.classList.contains('hidden');
   detail.classList.toggle('hidden', !isHidden);
   btn.textContent = isHidden ? '▼' : '▶';
+  if (isHidden) openMerges.add(id); else openMerges.delete(id);  // 记住展开状态，重渲染后不收起
 }
 
 </script>

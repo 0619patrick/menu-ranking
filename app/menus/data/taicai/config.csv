@@ -1,0 +1,29 @@
+﻿配置项,键,值
+brand,,中環泰菜 Here Thai
+short_name,,泰菜
+drop_category,,Drink Mod
+drop_category,,General Meal Set Item
+drop_category,,MISC
+drop_category,,No...
+drop_category,,Spice Level
+drop_category,,noodle shrimp cake set
+drop_category,,papaya green cury set
+drop_category,,tea set drink
+delivery_platform,外賣,Take
+delivery_platform,外賣,take
+delivery_platform,外賣,外賣手寫單
+adjust_marker,,手寫單
+pos_alias,Ka Prao Pork+ Drink,雙蛋打拋飯(豬) + 飲料
+pos_alias,Pad Thai+ Drink,泰式羅氏蝦炒金邊粉 + 飲料
+pos_alias,Chicken Rice+ Drink,泰式海南雞飯 + 飲料
+pos_alias,Beef Boat Noodles + Drink,牛肉船麵 + 飲料
+pos_alias,Tom Yum Goong Noodles+Drink,海鮮冬蔭功麵 + 飲料
+pos_alias,ka prao Chicken + Drink,香脆雞肉咖喱醬蓋澆飯 + 飲料
+pos_alias,ka prao Pork Belly + Drink,香脆五花肉咖喱醬蓋澆飯 + 飲料
+pos_alias,Green Curry beef+ Drink,青咖喱牛肉 + 飲料
+pos_alias,Green Curry chicken+ Drink,青咖喱雞肉 + 飲料
+pos_alias,Braised Beef + Drink,紅燒牛肉蓋澆飯 + 飲料
+pos_alias,Ka Prao+ Drink,打拋飯 + 飲料
+pos_alias,Boat Noodles+Drink,船麵 + 飲料
+pos_alias,Chicken Rice+Drink,海南雞飯 + 飲料
+pos_alias,Pork Noodles+ Drink,泰式豬肉湯麵 + 飲料

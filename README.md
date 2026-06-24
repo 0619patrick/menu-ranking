@@ -51,10 +51,17 @@ menu-ranking/
 ├── render.yaml             # Render 部署配置
 ├── Procfile                # 备用启动指令
 ├── README.md
+├── docs/
+│   └── 菜单配置表说明.md    # 配置表格式 / 加新店流程
 └── app/
+    ├── menus/
+    │   ├── base.py         # Menu 数据结构（归类规则引擎）
+    │   ├── loader.py       # CSV 配置加载器
+    │   └── data/<餐厅>/     # 每家餐厅的配置表（menu.csv + config.csv）
+    │                       #   改菜单/加别名/加新店只需编辑 CSV，不用改代码
+    ├── pos_adapters/       # POS 平台适配器（餐飲王 / 美团 → 标准 4 列）
     ├── processors/
-    │   ├── menu_config.py  # 菜单结构和映射规则
-    │   └── transformer.py  # 数据处理逻辑
+    │   └── transformer.py  # 数据处理引擎
     └── templates/
         └── index.html      # 上传页
 ```

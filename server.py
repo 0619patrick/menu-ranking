@@ -87,6 +87,15 @@ def _read_shop_specs(req):
             except json.JSONDecodeError:
                 deletions = []
 
+        # 前端 ▶ 里点 ×「拆回原大类」的变体行（/preview 和 /generate 都用）
+        unmerges_raw = req.form.get(f'unmerges_{i}', '').strip()
+        unmerges = []
+        if unmerges_raw:
+            try:
+                unmerges = json.loads(unmerges_raw) or []
+            except json.JSONDecodeError:
+                unmerges = []
+
         # 月份 / 地区（新版多店并排导出按 (地区, 品牌, 月份) 分 sheet）
         month_raw = req.form.get(f'shop_month_{i}', '').strip()
         try:
@@ -101,6 +110,7 @@ def _read_shop_specs(req):
             'restaurant_type': restaurant_type,
             'pos_type': pos_type,
             'deletions': deletions,
+            'unmerges': unmerges,
             'month': month,
             'region': region,
         })
@@ -128,6 +138,7 @@ def generate():
         try:
             src = load_source(io.BytesIO(s['file_bytes']), s['pos_type'])
             src = apply_deletions(src, s['deletions'])   # 用户手动删的行
+            src.attrs['unmerges'] = s['unmerges']        # 拆回原大类的项
             menu = get_menu(s['restaurant_type'])
         except Exception as e:
             return jsonify({'error': f'店铺「{s["shop_name"]}」解析失败: {e}'}), 400
@@ -184,6 +195,8 @@ def preview():
     def process_one(s):
         try:
             src = load_source(io.BytesIO(s['file_bytes']), s['pos_type'])
+            # 注：/preview 不在后端套用 unmerges——预览的「拆回原大类」由前端实时派生，
+            # 这样能保留 ▶ 里的删除线 + 恢復交互。下载 Excel (/generate) 才在后端真正落位。
             menu = get_menu(s['restaurant_type'])
             return ('ok', build_preview_data(s['shop_name'], src, menu))
         except Exception as e:
