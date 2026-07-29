@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>門店管理 - 菜品銷量排行</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "PingFang TC", "Microsoft YaHei", sans-serif; }
+  .modal-overlay { background: rgba(0,0,0,0.4); }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<div class="max-w-5xl mx-auto px-4 py-8">
+
+  <!-- 标题栏 -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">門店管理</h1>
+      <p class="text-sm text-gray-500 mt-1">新增、編輯、刪除門店 · 修改後返回首頁即可看到更新</p>
+    </div>
+    <a href="/" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium transition">← 返回首頁</a>
+  </div>
+
+  <!-- 消息提示 -->
+  <div id="msg-box" class="hidden p-4 rounded-lg mb-4 text-sm font-medium"></div>
+
+  <!-- 门店列表 -->
+  <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div class="p-4 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-base font-semibold text-gray-800">門店列表</h2>
+      <button onclick="showAddModal()"
+        class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+        ＋ 新增門店
+      </button>
+    </div>
+    <div id="stores-container" class="p-4 space-y-3">
+      <!-- 由 JS 渲染 -->
+    </div>
+  </div>
+</div>
+
+<!-- ===== 新增/编辑 Modal ===== -->
+<div id="store-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+    <h3 class="text-lg font-semibold text-gray-900 mb-4" id="modal-title">新增門店</h3>
+    <form id="store-form" class="space-y-4" onsubmit="return saveStore(event)">
+      <input type="hidden" id="store-id" value="">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">門店名稱</label>
+        <input type="text" id="store-name" required
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          placeholder="例: 香港天天銅鑼灣">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">顯示標籤</label>
+        <input type="text" id="store-label"
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          placeholder="例: 銅鑼灣（留空則使用門店名稱）">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">所屬餐廳</label>
+        <select id="store-restaurant" required
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">POS 類型</label>
+        <input type="text" id="store-pos" list="pos-list" required
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          placeholder="從下拉選擇或自行輸入">
+        <datalist id="pos-list">
+          <option value="canyinwang">餐飲王</option>
+          <option value="meituan">美團</option>
+          <option value="pos365">365</option>
+          <option value="keeta">Keeta</option>
+        </datalist>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">地區</label>
+        <select id="store-region" required
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+          <option value="香港">香港</option>
+          <option value="内地">内地</option>
+          <option value="其他">其他</option>
+        </select>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit"
+          class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">保存</button>
+        <button type="button" onclick="closeModal()"
+          class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">取消</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== 删除确认 Modal ===== -->
+<div id="delete-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+    <h3 class="text-lg font-semibold text-gray-900 mb-2">確認刪除</h3>
+    <p class="text-sm text-gray-600 mb-4" id="delete-msg">確定要刪除此門店嗎？</p>
+    <input type="hidden" id="delete-id" value="">
+    <div class="flex gap-3">
+      <button onclick="confirmDelete()"
+        class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition">刪除</button>
+      <button onclick="document.getElementById('delete-modal').classList.add('hidden')"
+        class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let storesData = [];
+let restaurantsData = {};
+let posTypesData = {};
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function showMsg(text, type) {
+  const box = document.getElementById('msg-box');
+  box.className = 'p-4 rounded-lg mb-4 text-sm font-medium ' + (type === 'error' ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800');
+  box.textContent = text;
+  box.classList.remove('hidden');
+  setTimeout(() => box.classList.add('hidden'), 3000);
+}
+
+function closeModal() {
+  document.getElementById('store-modal').classList.add('hidden');
+}
+
+// ===== 加载数据 =====
+
+async function loadData() {
+  const [sRes, rRes, pRes] = await Promise.all([
+    fetch('/api/stores'),
+    fetch('/api/restaurants'),
+    fetch('/api/pos-types')
+  ]);
+  storesData = await sRes.json();
+  restaurantsData = await rRes.json();
+  posTypesData = await pRes.json();
+  renderStores();
+}
+
+function renderStores() {
+  const container = document.getElementById('stores-container');
+  if (storesData.length === 0) {
+    container.innerHTML = '<p class="text-sm text-gray-400 text-center py-8">暫無門店，點擊右上角新增</p>';
+    return;
+  }
+
+  // 按餐厅分组
+  const groups = {};
+  storesData.forEach(s => {
+    const rest = s.restaurant || '未分類';
+    if (!groups[rest]) groups[rest] = [];
+    groups[rest].push(s);
+  });
+
+  container.innerHTML = Object.keys(groups).sort().map(rest => {
+    const brand = restaurantsData[rest] || rest;
+    const stores = groups[rest];
+    return `
+      <div class="border border-gray-200 rounded-lg">
+        <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+          <span class="text-sm font-semibold text-gray-700">${escHtml(brand)} <span class="text-gray-400 font-normal">(${rest})</span></span>
+          <span class="text-xs text-gray-400">${stores.length} 家</span>
+        </div>
+        <div class="divide-y divide-gray-100">
+          ${stores.map(s => `
+            <div class="px-4 py-3 flex items-center justify-between gap-4">
+              <div class="flex-1 min-w-0">
+                <span class="text-sm font-medium text-gray-900">${escHtml(s.name)}</span>
+                <span class="text-xs text-gray-400 ml-2">${escHtml(s.label)}</span>
+                <div class="flex gap-2 mt-1">
+                  <span class="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">${escHtml(posTypesData[s.pos] || s.pos)}</span>
+                  <span class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">${escHtml(s.region)}</span>
+                </div>
+              </div>
+              <div class="flex gap-2 flex-shrink-0">
+                <button onclick="editStore(${s.id})"
+                  class="px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded transition">編輯</button>
+                <button onclick="showDelete(${s.id},'${escHtml(s.name)}')"
+                  class="px-2.5 py-1 text-xs font-medium text-red-500 hover:bg-red-50 rounded transition">刪除</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ===== 新增/编辑 =====
+
+async function loadDropdowns(selectedRest, selectedPos) {
+  const restSelect = document.getElementById('store-restaurant');
+  restSelect.innerHTML = Object.entries(restaurantsData).map(([k, v]) =>
+    `<option value="${k}" ${k === selectedRest ? 'selected' : ''}>${escHtml(v)} (${k})</option>`
+  ).join('');
+
+  if (selectedPos) document.getElementById('store-pos').value = selectedPos;
+}
+
+function showAddModal() {
+  document.getElementById('modal-title').textContent = '新增門店';
+  document.getElementById('store-id').value = '';
+  document.getElementById('store-name').value = '';
+  document.getElementById('store-label').value = '';
+  document.getElementById('store-region').value = '香港';
+  loadDropdowns();
+  document.getElementById('store-modal').classList.remove('hidden');
+}
+
+async function editStore(id) {
+  const store = storesData.find(s => s.id === id);
+  if (!store) return;
+  document.getElementById('modal-title').textContent = '編輯門店';
+  document.getElementById('store-id').value = store.id;
+  document.getElementById('store-name').value = store.name;
+  document.getElementById('store-label').value = store.label || store.name;
+  document.getElementById('store-region').value = store.region || '香港';
+  await loadDropdowns(store.restaurant, store.pos);
+  document.getElementById('store-modal').classList.remove('hidden');
+}
+
+async function saveStore(e) {
+  e.preventDefault();
+  const id = document.getElementById('store-id').value;
+  const data = {
+    name: document.getElementById('store-name').value.trim(),
+    label: document.getElementById('store-label').value.trim(),
+    restaurant: document.getElementById('store-restaurant').value,
+    pos: document.getElementById('store-pos').value,
+    region: document.getElementById('store-region').value,
+  };
+  const isNew = !id;
+  try {
+    const resp = await fetch(isNew ? '/api/stores' : `/api/stores/${id}`, {
+      method: isNew ? 'POST' : 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.error); }
+    closeModal();
+    showMsg(isNew ? '門店新增成功' : '門店已更新', 'success');
+    await loadData();
+  } catch (err) {
+    showMsg('操作失敗: ' + err.message, 'error');
+  }
+}
+
+// ===== 删除 =====
+
+function showDelete(id, name) {
+  document.getElementById('delete-msg').textContent = `確定要刪除門店「${name}」嗎？`;
+  document.getElementById('delete-id').value = id;
+  document.getElementById('delete-modal').classList.remove('hidden');
+}
+
+async function confirmDelete() {
+  const id = document.getElementById('delete-id').value;
+  document.getElementById('delete-modal').classList.add('hidden');
+  try {
+    const resp = await fetch(`/api/stores/${id}`, { method: 'DELETE' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.error); }
+    showMsg('門店已刪除', 'success');
+    await loadData();
+  } catch (err) {
+    showMsg('刪除失敗: ' + err.message, 'error');
+  }
+}
+
+// ===== 启动 =====
+loadData();
+</script>
+
+</body>
+</html>

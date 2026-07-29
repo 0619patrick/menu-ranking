@@ -214,6 +214,10 @@ def register_routes(app):
         logger.info('/preview 完成: %d 家店', len(shops_data))
         return jsonify({'shops': shops_data})
 
+    @app.route('/admin')
+    def admin():
+        return render_template('admin.html')
+
     @app.route('/health')
     def health():
         return {'status': 'ok'}

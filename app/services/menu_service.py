@@ -39,6 +39,11 @@ def discover_menus() -> dict:
 MENUS = discover_menus()
 
 
+def list_restaurants() -> dict:
+    """返回 {key: brand} 字典（所有已发现的餐厅）"""
+    return {k: v.brand for k, v in MENUS.items()}
+
+
 def get_menu(restaurant_type: str) -> Menu:
     if restaurant_type not in MENUS:
         available = ', '.join(MENUS.keys())

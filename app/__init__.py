@@ -98,5 +98,9 @@ def create_app(config_name: str = None) -> Flask:
     from app.routes.main import register_routes
     register_routes(app)
 
+    # 注册 API 蓝图
+    from app.routes.api import api_bp
+    app.register_blueprint(api_bp)
+
     app.logger.info('应用启动完成 (config=%s)', config_name or 'development')
     return app

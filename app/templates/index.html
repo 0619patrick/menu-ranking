@@ -146,6 +146,11 @@
     </div>
   </details>
 
+  <!-- 管理入口 -->
+  <div class="mt-4 text-right">
+    <a href="/admin" class="text-sm text-gray-400 hover:text-blue-600 transition">門店管理</a>
+  </div>
+
   <footer class="text-center text-gray-400 text-xs mt-8">
     菜品銷量排行
   </footer>
@@ -357,50 +362,20 @@ const POS_DISPLAY = {
   'keeta':     'Keeta',
 };
 
-// 每个餐厅的门店列表（按地区分组）
+// 每个餐厅的门店列表（按地区分组），从 API 加载
 // 没有门店的餐厅留空对象, 顶部 tab 会显示"暫無門店"
-const QS_STORES_BY_RESTAURANT = {
-  'tiantian': {
-    '香港': [
-      { label: '銅鑼灣', name: '香港天天銅鑼灣', pos: 'meituan'    },
-      { label: '圓方',   name: '香港天天圓方',   pos: 'meituan'    },
-      { label: '沙田',   name: '香港天天沙田',   pos: 'canyinwang' },
-      { label: '太古城', name: '香港天天太古城', pos: 'canyinwang' },
-    ],
-    '内地': [
-      // 内地店用 tiantian_cn 菜单（人民币、新加坡融合菜），POS 同样美團
-      { label: '海口天天', name: '海口天天', pos: 'meituan', rest: 'tiantian_cn' },
-      { label: '南京天天', name: '南京天天', pos: 'meituan', rest: 'tiantian_cn' },
-      { label: '上海天天', name: '上海天天', pos: 'meituan', rest: 'tiantian_cn' },
-    ],
-  },
-  'acheng': {           // 阿城鵝肉
-    '香港': [
-      // 淘大/太古：通用17类（共用 acheng）。太古 +10% 服務費（不影响菜单，服務費行已在 drop 规则丢弃）
-      { label: '淘大', name: '香港阿城淘大', pos: 'canyinwang' },
-      { label: '太古', name: '香港阿城太古', pos: 'canyinwang' },
-      // 東涌(東薈城)：18类 = 通用17类 + 手作系列(刨冰)，用 acheng_donghui（继承 acheng）
-      { label: '東涌', name: '香港阿城東涌', pos: 'canyinwang', rest: 'acheng_donghui' },
-    ],
-    '内地': [
-      // 深圳店用 acheng_cn 菜单（简体, 卤味分3档+手作独立）, POS 美團
-      { label: '深圳阿城', name: '深圳阿城', pos: 'meituan', rest: 'acheng_cn' },
-    ],
-  },
-  'sijifenfang': {     // 四季芬芳
-    '香港': [
-      { label: '沙田', name: '香港四季芬芳沙田', pos: 'canyinwang' },
-    ],
-  },
-  'yizheng':      {},   // 鮨政
-  'taicai': {           // 泰菜
-    '香港': [
-      { label: '中環', name: '香港泰菜中環', pos: 'canyinwang' },
-      // 沙田泰菜走自己的菜单 taicai_shatian；POS 待定，先默认餐飲王，确定后可在「餐廳」下拉改美團
-      { label: '沙田', name: '香港泰菜沙田', rest: 'taicai_shatian', pos: 'canyinwang' },
-    ],
-  },
-};
+let QS_STORES_BY_RESTAURANT = {};
+
+async function loadStores() {
+  try {
+    const resp = await fetch('/api/stores/grouped');
+    QS_STORES_BY_RESTAURANT = await resp.json();
+  } catch (e) {
+    console.error('加载门店失败，使用空数据', e);
+    QS_STORES_BY_RESTAURANT = {};
+  }
+  qsRender();
+}
 
 let currentRestaurant = 'tiantian';
 
@@ -472,9 +447,12 @@ function qsRender() {
   }).join('');
 }
 
-addShop('香港天天太古城', 'tiantian', 'canyinwang', '香港');
-addShop('香港天天沙田',   'tiantian', 'canyinwang', '香港');
-setRestaurant('tiantian');   // 初始化顶部 tab + 渲染门店面板
+// 等待门店数据加载完成后初始化
+loadStores().then(() => {
+  addShop('香港天天太古城', 'tiantian', 'canyinwang', '香港');
+  addShop('香港天天沙田',   'tiantian', 'canyinwang', '香港');
+  setRestaurant('tiantian');
+});
 
 // ===== FormData 构建 =====
 

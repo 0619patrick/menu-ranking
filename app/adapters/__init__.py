@@ -11,10 +11,25 @@ from .canyinwang import CanyinwangAdapter
 from .meituan import MeituanAdapter
 
 
+class _PlaceholderAdapter(PosAdapter):
+    """占位适配器，待实装"""
+    NAME = ''
+    KEY = ''
+    def load(self, file_obj):
+        raise NotImplementedError(f'POS 适配器「{self.KEY}」尚未实装')
+
+
 ADAPTERS = {
     'canyinwang': CanyinwangAdapter,
     'meituan':    MeituanAdapter,
+    'pos365':     type('Pos365Adapter', (_PlaceholderAdapter,), {'NAME': '365', 'KEY': 'pos365'}),
+    'keeta':      type('KeetaAdapter',  (_PlaceholderAdapter,), {'NAME': 'Keeta', 'KEY': 'keeta'}),
 }
+
+
+def list_pos_types() -> dict:
+    """返回 {key: name} 字典（所有可用的 POS 平台）"""
+    return {k: cls.NAME for k, cls in ADAPTERS.items()}
 
 
 def get_adapter(pos_type: str) -> PosAdapter:
