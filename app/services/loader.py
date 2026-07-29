@@ -7,7 +7,8 @@ CSV 菜单配置加载器
   config.csv           其余规则（外卖标记、丢弃分类、cat_map、关键词……），三列：配置项/键/值
   store_overrides.csv  可选。单店特殊 POS 写法补丁（店铺/菜名/补充POS写法）
 
-POS 写法多个变体用 | 分隔。文件编码 UTF-8 with BOM（Excel 双击可直接打开）。
+POS 写法多个变体用 | 分隔，留空表示 POS 里写法与菜名相同。
+文件编码 UTF-8 with BOM（Excel 双击可直接打开）。
 
 配置继承（同品牌多店、菜单仅轻微不同时用）：
   config.csv 里写一行  extends,,<另一家店的key>   表示「先继承那家店的全部菜单和规则」，
@@ -56,7 +57,8 @@ def _load_menu_items(path):
         if not name:
             continue
         index[cat].append(
-            (name, _parse_price(price, f'{path} 第{lineno}行'), unit, _split_pos(pos))
+            (name, _parse_price(price, f'{path} 第{lineno}行'), unit,
+             _split_pos(pos) or [name])
         )
     return items
 
