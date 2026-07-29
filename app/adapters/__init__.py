@@ -9,6 +9,7 @@ POS 适配器注册表
 from .base import PosAdapter
 from .canyinwang import CanyinwangAdapter
 from .meituan import MeituanAdapter
+from .keeta import KeetaAdapter
 
 
 class _PlaceholderAdapter(PosAdapter):
@@ -23,7 +24,7 @@ ADAPTERS = {
     'canyinwang': CanyinwangAdapter,
     'meituan':    MeituanAdapter,
     'pos365':     type('Pos365Adapter', (_PlaceholderAdapter,), {'NAME': '365', 'KEY': 'pos365'}),
-    'keeta':      type('KeetaAdapter',  (_PlaceholderAdapter,), {'NAME': 'Keeta', 'KEY': 'keeta'}),
+    'keeta':      KeetaAdapter,
 }
 
 

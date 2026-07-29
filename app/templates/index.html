@@ -4,7 +4,104 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>菜品銷量排行</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.tailwindcss.com">
+// ===== AI 辅助匹配 =====
+
+function getRestaurantKey(shopName) {
+  const cards = document.querySelectorAll('.shop-card');
+  for (const card of cards) {
+    const idx = card.dataset.idx;
+    const nameInput = card.querySelector('input[name="shop_name_' + idx + '"]');
+    const restInput = card.querySelector('input[name="shop_restaurant_' + idx + '"]');
+    if (nameInput && nameInput.value === shopName && restInput) {
+      return restInput.value;
+    }
+  }
+  return currentRestaurant;
+}
+
+function showMatchSuggestions(shopName, itemName) {
+  const restKey = getRestaurantKey(shopName);
+  fetch('/api/match-suggestions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ restaurant: restKey, unmatched: [itemName] }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    const suggestions = (data.suggestions && data.suggestions[itemName]) || [];
+    renderMatchModal(shopName, restKey, itemName, suggestions);
+  })
+  .catch(err => alert('匹配请求失败: ' + err.message));
+}
+
+function renderMatchModal(shopName, restKey, itemName, suggestions) {
+  const existing = document.getElementById('match-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'match-modal';
+  modal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4';
+  modal.style.background = 'rgba(0,0,0,0.4)';
+
+  let html = '<div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto">';
+  html += '<h3 class="text-lg font-semibold text-gray-900 mb-2">🤖 AI 匹配建议</h3>';
+  html += '<p class="text-sm text-gray-500 mb-1">门店: ' + escHtml(shopName) + '</p>';
+  html += '<p class="text-sm text-gray-600 mb-4">POS 菜名: <code class="bg-gray-100 px-1 rounded">' + escHtml(itemName) + '</code></p>';
+
+  if (suggestions.length === 0) {
+    html += '<p class="text-sm text-amber-600 bg-amber-50 p-3 rounded">⚠️ 未找到相似度超过 30% 的匹配项，请手动在 menu.csv 中配置</p>';
+  } else {
+    html += '<div class="space-y-2 mb-4">';
+    suggestions.forEach((s, i) => {
+      const pct = Math.round(s.score * 100);
+      const color = pct >= 80 ? 'text-green-600' : (pct >= 50 ? 'text-amber-600' : 'text-gray-500');
+      html += '<div class="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer" onclick="confirmMatch('' + jsAttr(shopName) + '','' + jsAttr(restKey) + '','' + jsAttr(s.menu_name) + '','' + jsAttr(itemName) + '')">';
+      html += '  <div class="flex items-center justify-between">';
+      html += '    <div><span class="font-medium text-gray-900">' + escHtml(s.menu_name) + '</span>';
+      html += '      <span class="text-xs text-gray-400 ml-2">(' + escHtml(s.cat) + ')</span></div>';
+      html += '    <span class="text-sm font-bold ' + color + '">' + pct + '%</span>';
+      html += '  </div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<div class="flex gap-3 pt-2">';
+  html += '  <button onclick="document.getElementById('match-modal').remove()" class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">關閉</button>';
+  html += '</div></div>';
+  modal.innerHTML = html;
+  document.body.appendChild(modal);
+}
+
+async function confirmMatch(shopName, restKey, menuName, posWriting) {
+  try {
+    const resp = await fetch('/api/confirm-match', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ restaurant: restKey, menu_name: menuName, pos_writing: posWriting }),
+    });
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || '保存失败');
+
+    // 关闭弹窗
+    const modal = document.getElementById('match-modal');
+    if (modal) modal.remove();
+
+    // 显示成功消息
+    const msg = result.updated ? '✅ 已匹配并保存到菜单' : '✅ POS 写法已存在';
+    const el = document.createElement('div');
+    el.className = 'fixed top-4 right-4 z-50 bg-green-50 text-green-800 px-4 py-2 rounded-lg shadow text-sm';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+
+    // 重新加载预览
+    await fetchPreview();
+  } catch (err) {
+    alert('保存失败: ' + err.message);
+  }
+}
+</script>
 <style>
   body { font-family: -apple-system, "PingFang TC", "Microsoft YaHei", sans-serif; }
   .shop-card { transition: all 0.2s; }
@@ -130,6 +227,45 @@
       <div id="preview-content"></div>
 
     </div>
+  </div>
+
+  <!-- 自动拉取数据 -->
+  <div class="mt-6 bg-white rounded-xl shadow-sm p-6">
+    <details>
+      <summary class="cursor-pointer font-medium text-gray-700 hover:text-gray-900">
+        <span class="text-base font-semibold">🤖 AI 自動拉取數據</span>
+        <span class="text-xs text-gray-400 ml-2">從 POS 系統 API 自動獲取</span>
+      </summary>
+      <div class="mt-4 space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">開始日期</label>
+            <input type="date" id="fetch-start"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">結束日期</label>
+            <input type="date" id="fetch-end"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">選擇門店（從已添加的店鋪卡片中選取）</label>
+          <p class="text-xs text-gray-400">在上方「再加一家店」添加門店並上傳留空，系統將從 POS API 拉取數據</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <button id="fetch-btn" onclick="fetchAiData()"
+            class="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            拉取數據
+          </button>
+          <span id="fetch-status" class="text-sm text-gray-500"></span>
+        </div>
+        <div id="fetch-log" class="hidden space-y-1 max-h-40 overflow-y-auto text-sm"></div>
+      </div>
+    </details>
   </div>
 
   <!-- 使用说明（与预览框等宽） -->
@@ -453,6 +589,88 @@ loadStores().then(() => {
   addShop('香港天天沙田',   'tiantian', 'canyinwang', '香港');
   setRestaurant('tiantian');
 });
+
+// ===== AI 数据拉取 =====
+
+async function fetchAiData() {
+  const btn = document.getElementById('fetch-btn');
+  const statusEl = document.getElementById('fetch-status');
+  const logEl = document.getElementById('fetch-log');
+
+  // 收集当前已添加的店铺卡片
+  const cards = document.querySelectorAll('.shop-card');
+  if (cards.length === 0) {
+    statusEl.textContent = '請先在上方添加門店';
+    return;
+  }
+
+  const startDate = document.getElementById('fetch-start').value;
+  const endDate = document.getElementById('fetch-end').value;
+  if (!startDate || !endDate) {
+    statusEl.textContent = '請選擇開始和結束日期';
+    return;
+  }
+
+  const stores = [];
+  cards.forEach(card => {
+    const idx = card.dataset.idx;
+    const name = card.querySelector(`input[name="shop_name_${idx}"]`);
+    const rest = card.querySelector(`input[name="shop_restaurant_${idx}"]`);
+    const pos = card.querySelector(`input[name="shop_pos_${idx}"]`);
+    if (name && name.value) {
+      stores.push({
+        name: name.value,
+        pos_type: pos ? pos.value : 'canyinwang',
+        restaurant: rest ? rest.value : 'tiantian',
+      });
+    }
+  });
+
+  btn.disabled = true;
+  statusEl.textContent = '正在拉取數據...';
+  logEl.classList.remove('hidden');
+  logEl.innerHTML = '<div class="text-gray-500">⏳ 正在請求...</div>';
+
+  try {
+    const resp = await fetch('/api/fetch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ stores, start_date: startDate, end_date: endDate }),
+    });
+    const result = await resp.json();
+
+    if (!resp.ok) {
+      statusEl.textContent = '請求失敗';
+      logEl.innerHTML = `<div class="text-red-600">❌ ${result.error || '請求失敗'}</div>`;
+      return;
+    }
+
+    // 显示结果
+    let logHtml = '';
+    if (result.results && result.results.length > 0) {
+      logHtml += `<div class="text-green-600">✅ 成功拉取 ${result.results.length} 家店</div>`;
+      // 渲染预览
+      renderPreview(result.results);
+      document.getElementById('preview-section').classList.remove('hidden');
+      document.getElementById('preview-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    if (result.errors && result.errors.length > 0) {
+      result.errors.forEach(e => {
+        logHtml += `<div class="text-red-500">⚠️ ${escHtml(e.shop)}: ${escHtml(e.error)}</div>`;
+      });
+    }
+    if (!result.results || result.results.length === 0) {
+      logHtml += '<div class="text-gray-500">沒有拉取到數據</div>';
+    }
+    logEl.innerHTML = logHtml;
+    statusEl.textContent = result.status === 'ok' ? '✅ 完成' : (result.status === 'partial' ? '⚠️ 部分完成' : '❌ 失敗');
+  } catch (err) {
+    statusEl.textContent = '❌ 請求失敗';
+    logEl.innerHTML = `<div class="text-red-600">❌ ${escHtml(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 // ===== FormData 构建 =====
 
@@ -966,6 +1184,103 @@ function toggleMerge(btn, id) {
   if (isHidden) openMerges.add(id); else openMerges.delete(id);  // 记住展开状态，重渲染后不收起
 }
 
+
+// ===== AI 辅助匹配 =====
+
+function getRestaurantKey(shopName) {
+  const cards = document.querySelectorAll('.shop-card');
+  for (const card of cards) {
+    const idx = card.dataset.idx;
+    const nameInput = card.querySelector('input[name="shop_name_' + idx + '"]');
+    const restInput = card.querySelector('input[name="shop_restaurant_' + idx + '"]');
+    if (nameInput && nameInput.value === shopName && restInput) {
+      return restInput.value;
+    }
+  }
+  return currentRestaurant;
+}
+
+function showMatchSuggestions(shopName, itemName) {
+  const restKey = getRestaurantKey(shopName);
+  fetch('/api/match-suggestions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ restaurant: restKey, unmatched: [itemName] }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    const suggestions = (data.suggestions && data.suggestions[itemName]) || [];
+    renderMatchModal(shopName, restKey, itemName, suggestions);
+  })
+  .catch(err => alert('匹配请求失败: ' + err.message));
+}
+
+function renderMatchModal(shopName, restKey, itemName, suggestions) {
+  const existing = document.getElementById('match-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'match-modal';
+  modal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4';
+  modal.style.background = 'rgba(0,0,0,0.4)';
+
+  let html = '<div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto">';
+  html += '<h3 class="text-lg font-semibold text-gray-900 mb-2">🤖 AI 匹配建议</h3>';
+  html += '<p class="text-sm text-gray-500 mb-1">门店: ' + escHtml(shopName) + '</p>';
+  html += '<p class="text-sm text-gray-600 mb-4">POS 菜名: <code class="bg-gray-100 px-1 rounded">' + escHtml(itemName) + '</code></p>';
+
+  if (suggestions.length === 0) {
+    html += '<p class="text-sm text-amber-600 bg-amber-50 p-3 rounded">⚠️ 未找到相似度超过 30% 的匹配项，请手动在 menu.csv 中配置</p>';
+  } else {
+    html += '<div class="space-y-2 mb-4">';
+    suggestions.forEach((s, i) => {
+      const pct = Math.round(s.score * 100);
+      const color = pct >= 80 ? 'text-green-600' : (pct >= 50 ? 'text-amber-600' : 'text-gray-500');
+      html += '<div class="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer" onclick="confirmMatch('' + jsAttr(shopName) + '','' + jsAttr(restKey) + '','' + jsAttr(s.menu_name) + '','' + jsAttr(itemName) + '')">';
+      html += '  <div class="flex items-center justify-between">';
+      html += '    <div><span class="font-medium text-gray-900">' + escHtml(s.menu_name) + '</span>';
+      html += '      <span class="text-xs text-gray-400 ml-2">(' + escHtml(s.cat) + ')</span></div>';
+      html += '    <span class="text-sm font-bold ' + color + '">' + pct + '%</span>';
+      html += '  </div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<div class="flex gap-3 pt-2">';
+  html += '  <button onclick="document.getElementById('match-modal').remove()" class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">關閉</button>';
+  html += '</div></div>';
+  modal.innerHTML = html;
+  document.body.appendChild(modal);
+}
+
+async function confirmMatch(shopName, restKey, menuName, posWriting) {
+  try {
+    const resp = await fetch('/api/confirm-match', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ restaurant: restKey, menu_name: menuName, pos_writing: posWriting }),
+    });
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || '保存失败');
+
+    // 关闭弹窗
+    const modal = document.getElementById('match-modal');
+    if (modal) modal.remove();
+
+    // 显示成功消息
+    const msg = result.updated ? '✅ 已匹配并保存到菜单' : '✅ POS 写法已存在';
+    const el = document.createElement('div');
+    el.className = 'fixed top-4 right-4 z-50 bg-green-50 text-green-800 px-4 py-2 rounded-lg shadow text-sm';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+
+    // 重新加载预览
+    await fetchPreview();
+  } catch (err) {
+    alert('保存失败: ' + err.message);
+  }
+}
 </script>
 
 </body>

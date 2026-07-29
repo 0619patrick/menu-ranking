@@ -1063,11 +1063,16 @@ def compute_stats(src, menu: Menu, shop_name: str = None):
     items_patched = menu.items_for_store(shop_name)
     used = menu.collect_used_names(shop_name)
     by_name = precompute_dinein_by_name(src, menu)
+    addon_lookup = precompute_addon_split(src, menu)
 
     dinein_q = dinein_a = matched_items = 0
     for cat, items in items_patched:
+        is_addon = bool(menu.addon_section and cat == menu.addon_section)
         for name, price, unit, pos_names in items:
-            q, a = get_dinein_sales(pos_names, by_name)
+            if is_addon:
+                q, a, _ = get_addon_split(pos_names, addon_lookup)
+            else:
+                q, a = get_dinein_sales(pos_names, by_name)
             dinein_q += q
             dinein_a += a
             if q > 0 or a > 0:
