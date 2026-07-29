@@ -16,13 +16,12 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
-from app.pos_adapters import get_adapter
-from app.menus import get_menu
-from app.menus.base import Menu
+from app.adapters import get_adapter
+from app.services.menu_service import get_menu
+from app.models.menu import Menu
 
 
 def _delivery_pattern(menu: Menu) -> str:
-    """所有平台的 markers 扁平后拼成 regex（用来粗筛"是否外卖行"）"""
     return '|'.join(re.escape(m) for m in menu.all_delivery_markers)
 
 
@@ -41,7 +40,7 @@ FONT_SECTION = Font(name='宋体', size=10, bold=True)
 FONT_SECTION_W = Font(name='宋体', size=10, bold=True, color='FFFFFFFF')
 FONT_CAT = Font(name='宋体', size=11)
 FONT_DATA = Font(name='宋体', size=10)
-FONT_EXTRA = Font(name='宋体', size=10)  # 菜單外:黑色正体(靠灰底 F2_GRAY 区分)
+FONT_EXTRA = Font(name='宋体', size=10)
 
 CENTER = Alignment(horizontal='center', vertical='center')
 LEFT = Alignment(horizontal='left', vertical='center')
@@ -53,17 +52,11 @@ BORDER = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
 # ============= 数据加载 =============
 
 def load_source(file_obj, pos_type: str) -> pd.DataFrame:
-    """通过指定 POS 适配器加载源数据，返回标准 4 列 DataFrame"""
     adapter = get_adapter(pos_type)
     return adapter.load(file_obj)
 
 
 def apply_deletions(src: pd.DataFrame, deletions) -> pd.DataFrame:
-    """
-    用户在前端 ▶ 里点 × 删掉的行，从源数据里剔除后再交给后续逻辑。
-
-    deletions: list of {'name': POS项目名, 'cat': 分类}
-    """
     if not deletions:
         return src
     keys = {(d.get('name'), d.get('cat')) for d in deletions}
@@ -77,23 +70,15 @@ def apply_deletions(src: pd.DataFrame, deletions) -> pd.DataFrame:
 # ============= 通用聚合（不依赖菜单） =============
 
 def normalize_pos_names(src, menu: Menu):
-    """匹配前把 POS 项目名称里『可忽略的描述词』删掉，让加了无关后缀的项目能对上菜单标准名。
-    - strip_tokens: 固定子串，无条件删（如「（不能走甜）」）。
-    - strip_regex:  正则，条件式删——删掉后能匹配上『某菜单POS写法』或『数据里已存在的干净名』才删，
-                    否则保留原名。这样「星洲甄選2人餐499」→「星洲甄選2人餐」(干净版存在,合并)，
-                    而「獅城兩人套餐599」→ 不变(没有干净版,避免误删套餐价)。
-    """
     if not menu.strip_tokens and not menu.strip_regex and not menu.pos_renames:
         return src
     s = src.copy()
     col = s['项目名称'].astype(str)
-    # 统一写法：错字/字序颠倒/旧名等整体改名（在去后缀、匹配、聚合之前）
     if menu.pos_renames:
         col = col.map(lambda n: menu.pos_renames.get(n, n))
     for t in menu.strip_tokens:
         col = col.str.replace(t, '', regex=False)
     if menu.strip_regex:
-        # known = 菜单全部POS写法 + 数据里现有的全部项目名(去后缀后能撞上才删)
         known = menu.collect_used_names() | set(col)
         pats = [re.compile(p) for p in menu.strip_regex]
 
@@ -110,20 +95,8 @@ def normalize_pos_names(src, menu: Menu):
 
 
 def precompute_dinein_by_name(src, menu: Menu):
-    """
-    一次性把堂食（排除外卖分类 + 排除 drop_categories）的数据按
-    (项目名称, 分类) 预聚合好，返回 dict: { POS项目名: [(分类, qty, amt), ...] }
-
-    排除 drop_categories 是为了防止「被丢弃分类」里的项目名与正常分类重名时产生双重计算。
-    例：General Meal Set Item 里的 Longan lce 与 Drinks 里的 Longan lce 同名，
-    若不排除，get_dinein_sales 会把两份都加进去。
-
-    所有 get_dinein_sales / get_dinein_sales_detail / build_dinein_extras
-    都基于这个 dict 查询，把过去 O(N×K) 的全表过滤变成 O(K) 的字典查找。
-    """
     pattern = _delivery_pattern(menu)
     dinein = src[~src['分类'].str.contains(pattern, na=False, regex=True)]
-    # 排除 drop_categories，避免被丢弃分类的同名项目混入堂食计算
     if menu.drop_categories:
         dinein = dinein[~dinein['分类'].isin(menu.drop_categories)]
     if dinein.empty:
@@ -134,7 +107,6 @@ def precompute_dinein_by_name(src, menu: Menu):
     by_name = {}
     for name, cat, q, a in zip(agg['项目名称'], agg['分类'], agg['数量'], agg['金额']):
         amt = int(round(a))
-        # drop_zero_amount：金额为0的行(销量被算进套餐了)直接剔除，不混进堂食聚合
         if menu.drop_zero_amount and amt == 0:
             continue
         by_name.setdefault(name, []).append((cat, int(q), amt))
@@ -142,7 +114,6 @@ def precompute_dinein_by_name(src, menu: Menu):
 
 
 def get_dinein_sales(name_list, by_name):
-    """加总指定 POS 名列表的堂食 (数量, 金额)。O(K) 字典查找。"""
     q = a = 0
     for n in name_list:
         for _cat, qty, amt in by_name.get(n, ()):
@@ -152,12 +123,6 @@ def get_dinein_sales(name_list, by_name):
 
 
 def precompute_addon_split(src, menu: Menu):
-    """
-    四季芬芳「加料」专用：把 addon_categories 里的行按 (POS项目名) 分成
-    「收费版 价>0」「内含版 价=0」两组，返回 dict:
-      { POS项目名: {'paid_q', 'paid_a', 'free_q', 'free_a'} }
-    没配置 addon_categories 就直接返回 {}。
-    """
     if not menu.addon_categories:
         return {}
     sub = src[src['分类'].isin(menu.addon_categories)]
@@ -183,7 +148,6 @@ def precompute_addon_split(src, menu: Menu):
 
 
 def get_addon_split(name_list, addon_lookup):
-    """加总指定 POS 名列表的「收费 / 内含」拆分结果。"""
     paid_q = paid_a = free_q = 0
     for n in name_list:
         d = addon_lookup.get(n)
@@ -196,19 +160,12 @@ def get_addon_split(name_list, addon_lookup):
 
 
 def get_dinein_sales_detail(name_list, by_name):
-    """
-    返回 (total_qty, total_amt, variants)，按 (POS项目名, 分类) 拆。
-
-    同名跨分类（例如「鮮椰子水」既在「飲品」也在套餐拆解分类「ODO飲品(不能撞餐)」）
-    会拆成多条 variant，给前端 ▶ 展开用。
-    """
     variants = []
     for n in name_list:
         for cat, qty, amt in by_name.get(n, ()):
             if qty == 0 and amt == 0:
                 continue
             variants.append({'name': n, 'cat': cat, 'qty': qty, 'amt': amt})
-    # 金额降序；同金额按数量降序
     variants.sort(key=lambda v: (-v['amt'], -v['qty']))
     return (
         sum(v['qty'] for v in variants),
@@ -218,12 +175,6 @@ def get_dinein_sales_detail(name_list, by_name):
 
 
 def _audit_merged(pos_names, by_name, nonzero_variants, display_name):
-    """前端 ▶ 蓝色小三角：是否显示 + 展开明细。
-
-    显示条件（基于有销量的来源 nonzero_variants）：
-      2+ 个有销量来源，或唯一有销量来源的 POS 名 ≠ 菜单显示名（即销量走了别名/旧名）。
-    展开只列『真正有销量的来源』——配置了但没卖的 POS 写法不补 0、不显示。
-    """
     trigger = len(nonzero_variants) > 1 or (
         len(nonzero_variants) == 1 and nonzero_variants[0]['name'] != display_name
     )
@@ -231,10 +182,6 @@ def _audit_merged(pos_names, by_name, nonzero_variants, display_name):
 
 
 def _sort_extras_cats(extras):
-    """
-    非平台分类按金额降序; 带「平台」字样的分类作为一整块, 插到「下午茶」之后。
-    没有「下午茶」分类时, 平台块放末尾。
-    """
     amt = lambda c: sum(x[2] for x in extras[c])
     non_platform = sorted(
         [c for c in extras if '平台' not in c],
@@ -251,14 +198,7 @@ def _sort_extras_cats(extras):
 
 
 def merge_new_items(items_in_cat):
-    """
-    把 new_in_section[菜单分类] 里同名新菜（来自不同 POS 大类）合并成一行。
-
-    入参: [(name, pos_cat, qty, amt), ...]
-    返回: [(name, total_qty, total_amt, [pos_cats], [parts]), ...]，按金额降序
-      parts = [{'name','cat','qty','amt'}, ...] 各来源明细，供前端 ▶ 展开/拆分用
-    """
-    agg = {}  # name → {qty, amt, cats:set, parts:list}
+    agg = {}
     for name, pos_cat, q, a in items_in_cat:
         part = {'name': name, 'cat': pos_cat, 'qty': q, 'amt': a}
         b = agg.get(name)
@@ -272,11 +212,10 @@ def merge_new_items(items_in_cat):
     return out
 
 
-_EXTRAS_SUFFIX = re.compile(r'[=$＄]?\d+$')  # 菜單外项尾部的价格后缀(=20 / $38 / 35 / 799)
+_EXTRAS_SUFFIX = re.compile(r'[=$＄]?\d+$')
 
 
 def _agg_by_name(items):
-    """按全名聚合：items=[(name,cat,q,a)] → [bucket]"""
     bucket = {}
     for name, cat, q, a in items:
         part = {'name': name, 'cat': cat, 'qty': q, 'amt': a}
@@ -289,11 +228,7 @@ def _agg_by_name(items):
 
 
 def _agg_coded(items):
-    """合并目标大类(如午餐)的聚合：
-    - 有「午X. 」代号的：按代号聚合，显示名取销量最大的变体。
-    - 无代号项：去掉价格后缀后，若菜名 == 某代号项的菜名(代号后的部分)，并入该项(保留午X显示名)；
-      否则独立成行。"""
-    code_bucket = {}   # code -> bucket(含 dish)
+    code_bucket = {}
     noncoded = []
     for name, cat, q, a in items:
         part = {'name': name, 'cat': cat, 'qty': q, 'amt': a}
@@ -314,7 +249,7 @@ def _agg_coded(items):
     for name, cat, q, a, part in noncoded:
         dish = _EXTRAS_SUFFIX.sub('', name).strip()
         b = dish_index.get(dish)
-        if b is not None:                      # 撞上某代号项的菜名 → 并入(不改午X显示名)
+        if b is not None:
             b['qty'] += q; b['amt'] += a; b['parts'].append(part)
         else:
             sb = standalone.get(name)
@@ -326,15 +261,6 @@ def _agg_coded(items):
 
 
 def pop_unmerges(by_name, unmerges):
-    """把用户在前端 ▶ 里点 ×「拆回原大类」的 (项目名, 分类) 从 by_name 里摘出来。
-
-    被摘出的项不再参与菜单匹配 / 菜單外路由（cat_map/extras_merge 等都不作用），
-    而是原样回到它自己的 POS 大类段（forced_extras），由 route_unmatched_items
-    直接塞进 extras（没有这个段就新建）。
-
-    unmerges: list of {'name': POS项目名, 'cat': 分类}
-    返回 forced_extras: [(name, cat, qty, amt), ...]
-    """
     if not unmerges:
         return []
     keys = {(u.get('name'), u.get('cat')) for u in unmerges}
@@ -356,21 +282,8 @@ def pop_unmerges(by_name, unmerges):
 
 
 def route_unmatched_items(by_name, used_names, menu: Menu, forced_extras=()):
-    """
-    把所有「菜单没匹配上」的 POS 行按 menu.cat_map / force_cat / drop_names 路由：
-      - 目标是某菜单分类名 → 当作🆕新菜，加进 new_in_section[菜单分类] 列表
-      - 目标是 '__OUT__'   → 放进 extras（保留原 POS 大类作为段标题）
-      - 目标是 '__DROP__' / drop_names 命中 / drop_categories 命中 → 丢弃
-
-    forced_extras（pop_unmerges 的结果）：用户手动拆回原大类的项，原样塞进
-    它自己的 POS 大类段，不再二次路由/聚合。
-
-    返回 (new_in_section, extras):
-      - new_in_section: { 菜单分类名: [(name, pos_cat, qty, amt), ...] }
-      - extras:         { POS分类名: [(name, qty, amt, merged), ...] }
-    """
     new_in_section = {}
-    raw = {}  # 显示大类 -> [(name, cat, q, a), ...]（先路由收集，后分段聚合）
+    raw = {}
     merge_targets = set(menu.extras_merge.values())
     for name, rows in by_name.items():
         if name in used_names:
@@ -384,24 +297,18 @@ def route_unmatched_items(by_name, used_names, menu: Menu, forced_extras=()):
             if target == '__DROP__' or target is None:
                 continue
             if target == '__OUT__':
-                # 按菜名的菜單外路由(extras_item_merge)优先于按大类的(extras_merge)
                 out_cat = menu.extras_item_merge.get(name) or menu.extras_merge.get(cat, cat)
                 raw.setdefault(out_cat, []).append((name, cat, q, a))
             else:
                 new_in_section.setdefault(target, []).append((name, cat, q, a))
     extras = {}
     for out_cat, items in raw.items():
-        # 合并目标大类(extras_merge 的目标)用代号聚合+无代号项按菜名归并；其他段按全名
         buckets = _agg_coded(items) if out_cat in merge_targets else _agg_by_name(items)
-        # 每项第4元素 merged：发生了聚合(>1来源)时给前端 ▶ 展开用，否则空
         rows = [
             (b['name'], b['qty'], b['amt'], b['parts'] if len(b['parts']) > 1 else [])
             for b in buckets
         ]
         extras[out_cat] = sorted(rows, key=lambda x: -x[2])
-    # 用户手动拆回原大类的项：
-    #   - 这个大类本身已是菜单大类 → 并进该菜单分类（走 new_in_section，不另起同名菜單外段）
-    #   - 否则塞进菜單外它自己的 POS 大类段（已有就并入，没有才新建；merged 置空，独立成行）
     if forced_extras:
         menu_cats = menu._menu_cat_names()
         touched = set()
@@ -417,45 +324,22 @@ def route_unmatched_items(by_name, used_names, menu: Menu, forced_extras=()):
 
 
 def build_dinein_extras(by_name, used_names, menu: Menu):
-    """向后兼容封装：只返回 extras 部分。新代码请用 route_unmatched_items。"""
     _, extras = route_unmatched_items(by_name, used_names, menu)
     return extras
 
 
 def build_delivery(src, menu: Menu):
-    """
-    收集所有外卖分类的项目，按平台分组返回。
-
-    返回结构:
-      [
-        {
-          'platform': 'Keeta',           # menu.delivery_platforms 的 key
-          'normal':   [{'cat':..., 'items':[{name,qty,amt,merged}]}, ...],
-          'selftake': [...同 normal 结构, 含「自取」字样的子分类...],
-          'adjustments': [               # 补差价(adjust_marker)行, 按项目名聚合
-              {'name': 'Keeta 補差價', 'qty':4, 'amt':25,
-               'merged': [{'name':..,'cat':..,'qty':..,'amt':..}, ...]},
-              ...
-          ],
-        },
-        ...其他平台
-      ]
-    平台顺序按 menu.delivery_platforms 字典声明顺序。
-    """
     if src.empty:
         return []
 
-    # 反向映射: POS 项目名 → 菜单标准菜名（用于同分类内合并显示）
     pos_to_dish = {}
     for _cat, items in menu.items:
         for dish_name, _p, _u, pos_names in items:
             for pn in pos_names:
                 pos_to_dish[pn] = dish_name
-    # 套餐别名（如 Set+Drink）：菜单未列，但希望用中文显示
     for pn, alias in menu.pos_aliases.items():
         pos_to_dish.setdefault(pn, alias)
 
-    # 把整个 src 按 (平台, 是否补差价) 切片
     platforms_data = {p: {'normal_rows': [], 'selftake_rows': [], 'adjust_rows': []}
                       for p in menu.delivery_platforms.keys()}
 
@@ -470,13 +354,11 @@ def build_delivery(src, menu: Menu):
         for _, r in sub.iterrows():
             platforms_data[platform][bucket].append((cat, r['项目名称'], int(r['数量']), int(r['金额'])))
 
-    # 渲染各平台
     result = []
     for platform in menu.delivery_platforms.keys():
         pd_data = platforms_data[platform]
 
         def build_section_group(rows):
-            """rows: list of (cat, pos_name, qty, amt) → [{cat, items:[{name,qty,amt,merged}]}, ...]"""
             by_cat = {}
             for cat, pn, q, a in rows:
                 if q == 0 and a == 0:
@@ -485,8 +367,7 @@ def build_delivery(src, menu: Menu):
             sections = []
             for cat in sorted(by_cat.keys(),
                               key=lambda c: -sum(a for _, _, a in by_cat[c])):
-                # 同分类内按 (菜单标准名 或 POS 名) 合并
-                groups = {}  # display_key → {pos_name: [q, a]}
+                groups = {}
                 for pn, q, a in by_cat[cat]:
                     display_key = pos_to_dish.get(pn, pn)
                     inner = groups.setdefault(display_key, {})
@@ -501,8 +382,6 @@ def build_delivery(src, menu: Menu):
                                 for pn, (q, a) in by_pn.items()]
                     total_q = sum(v['qty'] for v in variants)
                     total_a = sum(v['amt'] for v in variants)
-                    # 始终用 display_key（菜单中文显示名，未匹配的菜单项则 fallback 为 POS 名）
-                    # 多变体时附 merged 明细给前端 ▶ 展开
                     display_name = display_key
                     merged = variants if len(variants) >= 2 else []
                     items.append({'name': display_name, 'qty': total_q, 'amt': total_a, 'merged': merged})
@@ -510,11 +389,10 @@ def build_delivery(src, menu: Menu):
                 sections.append({'cat': cat, 'items': items})
             return sections
 
-        normal   = build_section_group(pd_data['normal_rows'])
+        normal = build_section_group(pd_data['normal_rows'])
         selftake = build_section_group(pd_data['selftake_rows'])
 
-        # 补差价: 按 POS 项目名聚合（每笔可能金额不同，保留 ▶ 明细）
-        adj_groups = {}  # pn → list of (cat, q, a)
+        adj_groups = {}
         for cat, pn, q, a in pd_data['adjust_rows']:
             adj_groups.setdefault(pn, []).append((cat, q, a))
         adjustments = []
@@ -524,18 +402,17 @@ def build_delivery(src, menu: Menu):
             merged = [{'name': pn, 'cat': c, 'qty': q, 'amt': a} for c, q, a in entries]
             adjustments.append({
                 'name': pn,
-                'qty':  total_q,
-                'amt':  total_a,
+                'qty': total_q,
+                'amt': total_a,
                 'merged': merged if len(merged) >= 2 else [],
             })
         adjustments.sort(key=lambda r: -r['amt'])
 
-        # 没东西的平台跳过
         if not normal and not selftake and not adjustments:
             continue
         result.append({
             'platform': platform,
-            'normal':   normal,
+            'normal': normal,
             'selftake': selftake,
             'adjustments': adjustments,
         })
@@ -545,16 +422,11 @@ def build_delivery(src, menu: Menu):
 # ============= Excel 输出 =============
 
 def build_sheet(ws, shop_name, src, menu: Menu):
-    """在 sheet 里建好该店的对照表"""
     src = normalize_pos_names(src, menu)
-    # 取应用了门店补丁后的菜单
     items_patched = menu.items_for_store(shop_name)
     used_names = menu.collect_used_names(shop_name)
-
-    # 一次性预聚合堂食数据；后面所有 get_dinein_sales 都从这里查
     by_name = precompute_dinein_by_name(src, menu)
 
-    # 列宽（堂食 B-G，删除了 單位 列；外賣 J-N 不变）
     widths = {
         'A': 2, 'B': 13, 'C': 4.5, 'D': 36, 'E': 8, 'F': 8, 'G': 10,
         'I': 2, 'J': 22, 'K': 4.5, 'L': 36, 'M': 8, 'N': 10
@@ -562,7 +434,6 @@ def build_sheet(ws, shop_name, src, menu: Menu):
     for col, w in widths.items():
         ws.column_dimensions[col].width = w
 
-    # 行 1: 总标题
     ws.row_dimensions[1].height = 28
     ws.merge_cells('B1:N1')
     ws.cell(row=1, column=2, value=f'{menu.brand} × {shop_name} 銷量對照').font = FONT_TITLE
@@ -570,7 +441,6 @@ def build_sheet(ws, shop_name, src, menu: Menu):
     for col in range(2, 15):
         ws.cell(row=1, column=col).fill = BLUE
 
-    # 行 2: 区域标题
     ws.merge_cells('B2:G2')
     ws.cell(row=2, column=2, value='堂食 (按菜單分類)').font = FONT_HEADER
     ws.cell(row=2, column=2).alignment = CENTER
@@ -583,7 +453,6 @@ def build_sheet(ws, shop_name, src, menu: Menu):
     for col in range(10, 15):
         ws.cell(row=2, column=col).fill = GRAY_HEADER
 
-    # 行 3: 字段头
     dinein_headers = [('B', '分類'), ('C', '排序'), ('D', '品名'),
                       ('E', '菜單價'), ('F', '數量'), ('G', '金額')]
     for col_letter, h in dinein_headers:
@@ -606,9 +475,8 @@ def build_sheet(ws, shop_name, src, menu: Menu):
 
     merge_ranges = []
 
-    # ===== 写堂食区 =====
     def write_dinein_row(r, vals, fill=None, font=None):
-        cols = [2, 3, 4, 5, 6, 7]   # B-G: 分類/排序/品名/菜單價/數量/金額
+        cols = [2, 3, 4, 5, 6, 7]
         for col, val in zip(cols, vals):
             c = ws.cell(row=r, column=col, value=val)
             if fill:
@@ -619,7 +487,6 @@ def build_sheet(ws, shop_name, src, menu: Menu):
 
     current_row_dinein = 4
 
-    # 茶位（若该餐厅菜单的第一项就是「茶位」）
     if items_patched and items_patched[0][0] == '茶位':
         tea_cat, tea_items = items_patched[0]
         for idx, (name, price, unit, pos_names) in enumerate(tea_items):
@@ -632,7 +499,6 @@ def build_sheet(ws, shop_name, src, menu: Menu):
     else:
         menu_sections = items_patched
 
-    # 大MENU 标题
     ws.merge_cells(start_row=current_row_dinein, start_column=2,
                    end_row=current_row_dinein, end_column=7)
     ws.cell(row=current_row_dinein, column=2, value='大MENU').font = FONT_SECTION
@@ -642,26 +508,20 @@ def build_sheet(ws, shop_name, src, menu: Menu):
         ws.cell(row=current_row_dinein, column=col).border = BORDER
     current_row_dinein += 1
 
-    # 加料专用拆分
     addon_lookup = precompute_addon_split(src, menu)
-
-    # 一次性路由未匹配项（🆕新菜进 menu sections，菜單外的进 extras）
     new_in_section, extras = route_unmatched_items(by_name, used_names, menu)
 
-    # 各分类(按金额降序)
     for cat, items in menu_sections:
         is_addon = menu.addon_section and cat == menu.addon_section
         items_with_sales = []
         for name, price, unit, pos_names in items:
             if is_addon:
                 paid_q, paid_a, free_q = get_addon_split(pos_names, addon_lookup)
-                # 显示名后附「套餐內含 N次」
                 disp_name = f'{name}〔套餐內含 {free_q}次〕' if free_q > 0 else name
                 items_with_sales.append((disp_name, price, unit, paid_q, paid_a))
             else:
                 q, a = get_dinein_sales(pos_names, by_name)
                 items_with_sales.append((name, price, unit, q, a))
-        # 追加路由到本分类的项目（Excel 导出不打🆕前缀，业主要求）
         if not is_addon:
             for n, q, a, _cats, _parts in merge_new_items(new_in_section.get(cat, [])):
                 items_with_sales.append((n, '', '', q, a))
@@ -677,9 +537,8 @@ def build_sheet(ws, shop_name, src, menu: Menu):
             current_row_dinein += 1
         if len(items_with_sales) > 1:
             merge_ranges.append(f'B{start}:B{current_row_dinein-1}')
-        current_row_dinein += 1  # 空一行
+        current_row_dinein += 1
 
-    # 堂食菜單外（extras 已由上面 route_unmatched_items 算好）
     if extras:
         for col in range(2, 8):
             ws.cell(row=current_row_dinein, column=col).fill = LIGHT_GRAY
@@ -704,7 +563,6 @@ def build_sheet(ws, shop_name, src, menu: Menu):
                 merge_ranges.append(f'B{start}:B{current_row_dinein-1}')
             current_row_dinein += 1
 
-    # ===== 写外卖区(右侧) =====
     def write_delivery_row(r, vals, font=None):
         cols = [10, 11, 12, 13, 14]
         for col, val in zip(cols, vals):
@@ -746,15 +604,11 @@ def build_sheet(ws, shop_name, src, menu: Menu):
             current_row_dlv += 1
 
     for p_idx, p in enumerate(delivery_platforms):
-        # 平台标题
         write_separator(f'━━━ {p["platform"]} ━━━', fill=GRAY_HEADER, font=FONT_SECTION_W)
-        # 普通段
         write_sections(p['normal'])
-        # 自取
         if p['selftake']:
             write_separator('─── 自取 ───', fill=GRAY_HEADER, font=FONT_SECTION_W)
             write_sections(p['selftake'])
-        # 补差价
         if p['adjustments']:
             write_separator('─── 補差價 ───', fill=GRAY_HEADER, font=FONT_SECTION_W)
             for idx, item in enumerate(p['adjustments']):
@@ -764,27 +618,22 @@ def build_sheet(ws, shop_name, src, menu: Menu):
                 current_row_dlv += 1
             current_row_dlv += 1
 
-    # 应用合并
     for mr in merge_ranges:
         ws.merge_cells(mr)
         first_cell = mr.split(':')[0]
         ws[first_cell].alignment = CENTER
 
 
-# ============= 预览数据（供前端 JS 渲染） =============
+# ============= 预览数据 =============
 
 def build_preview_data(shop_name, src, menu: Menu):
-    """构建预览用结构化数据（供前端渲染表格）"""
-    unmerges = src.attrs.get('unmerges') or []   # 前端 ▶ 里点 × 拆回原大类的项
+    unmerges = src.attrs.get('unmerges') or []
     src = normalize_pos_names(src, menu)
     items_patched = menu.items_for_store(shop_name)
     used_names = menu.collect_used_names(shop_name)
-
-    # 一次性预聚合
     by_name = precompute_dinein_by_name(src, menu)
     forced_extras = pop_unmerges(by_name, unmerges)
 
-    # 茶位（若该餐厅菜单的第一项就是「茶位」）
     tea_rows = []
     if items_patched and items_patched[0][0] == '茶位':
         tea_cat, tea_items_raw = items_patched[0]
@@ -797,24 +646,18 @@ def build_preview_data(shop_name, src, menu: Menu):
     else:
         menu_iter = items_patched
 
-    # 加料专用拆分（仅四季芬芳目前使用 addon_categories+addon_section）
     addon_lookup = precompute_addon_split(src, menu)
-
-    # 一次性算好未匹配项的去向：哪些菜单分类要插🆕新菜、哪些进菜單外
     new_in_section, extras = route_unmatched_items(by_name, used_names, menu, forced_extras)
 
     menu_sections = []
     for cat, items_raw in menu_iter:
         rows = []
         if menu.addon_section and cat == menu.addon_section:
-            # 加料段：每项显示 收费 qty/amt + 内含 free_qty（用于品名后缀「套餐內含 N次」）
             for name, price, unit, pos_names in items_raw:
                 paid_q, paid_a, free_q = get_addon_split(pos_names, addon_lookup)
                 rows.append({'name': name, 'price': price, 'unit': unit,
                              'qty': paid_q, 'amt': paid_a,
-                             'free_qty': free_q,
-                             'merged': []})
-            # 按 paid_amt 降序；同金额按 paid+free 数量降序
+                             'free_qty': free_q, 'merged': []})
             rows.sort(key=lambda x: (-x['amt'], -(x['qty'] + x.get('free_qty', 0))))
         else:
             for name, price, unit, pos_names in items_raw:
@@ -822,15 +665,12 @@ def build_preview_data(shop_name, src, menu: Menu):
                 rows.append({'name': name, 'price': price, 'unit': unit,
                              'qty': q, 'amt': a,
                              'merged': _audit_merged(pos_names, by_name, variants, name)})
-            # 插 🆕 新菜：菜单未列、但 cat_map/force_cat 路由到本分类的项目
-            # 同名跨 POS 大类合并成一行，原大类列在 pos_cat 字段（合并后是 list）
             is_pos_native = cat in menu.pos_native_sections
             for n, q, a, pos_cats, parts in merge_new_items(new_in_section.get(cat, [])):
                 row = {'name': n, 'price': '', 'unit': '',
                        'qty': q, 'amt': a,
                        'pos_cat': '/'.join(pos_cats),
                        'merged': parts if len(parts) > 1 else []}
-                # pos_native 段不标🆕（该段本来就以 POS 原生项为准）
                 if not is_pos_native:
                     row['is_new'] = True
                 rows.append(row)
@@ -847,8 +687,6 @@ def build_preview_data(shop_name, src, menu: Menu):
     ]
 
     delivery_platforms = build_delivery(src, menu)
-    # 直接把 build_delivery 的输出（已按平台分组、含 normal/selftake/adjustments）
-    # 透传给前端 JS，前端按平台渲染表格。
 
     return {
         'shop_name': shop_name,
@@ -860,15 +698,9 @@ def build_preview_data(shop_name, src, menu: Menu):
     }
 
 
-# ============= 入口函数 =============
+# ============= Excel 入口 =============
 
 def generate_excel(parsed_shops):
-    """
-    旧版：单店每店一个 sheet（保留作 fallback / 测试用）。
-
-    parsed_shops: list of (shop_name: str, src: DataFrame, menu: Menu)
-    返回: BytesIO 对象
-    """
     wb = Workbook()
     wb.remove(wb.active)
     for shop_name, src, menu in parsed_shops:
@@ -880,15 +712,10 @@ def generate_excel(parsed_shops):
     return output
 
 
-# ============= 新版：多店并排（5列/店）按 (地区, 品牌, 月份) 分 sheet =============
+# ============= 新版：多店并排 =============
 
 def build_shop_block_data(shop_name, src, menu: Menu):
-    """
-    单店的 5 列结构化数据，每个 block = (category, kind, rows[])
-    kind: 'tea' / 'menu' / 'extra'
-    每个 row: {'name', 'qty', 'amt'}
-    """
-    unmerges = src.attrs.get('unmerges') or []   # 前端 ▶ 里点 × 拆回原大类的项
+    unmerges = src.attrs.get('unmerges') or []
     src = normalize_pos_names(src, menu)
     items_patched = menu.items_for_store(shop_name)
     used_names = menu.collect_used_names(shop_name)
@@ -898,7 +725,6 @@ def build_shop_block_data(shop_name, src, menu: Menu):
 
     blocks = []
 
-    # 茶位
     if items_patched and items_patched[0][0] == '茶位':
         tea_cat, tea_items = items_patched[0]
         rows = []
@@ -913,12 +739,8 @@ def build_shop_block_data(shop_name, src, menu: Menu):
     else:
         menu_iter = items_patched
 
-    # 一次性路由未匹配项：新菜进所属菜单分类(🆕)，菜單外的进 extras
     new_in_section, extras = route_unmatched_items(by_name, used_names, menu, forced_extras)
 
-    # 菜单分类：保持菜单声明顺序（与官方菜单 PDF 一致），
-    # 这样多店并排时同一行就是同一个分类，便于横向比较销量。
-    # 分类内的菜品仍按金额降序（卖得好的排前面）。
     for cat, items_raw in menu_iter:
         is_addon = bool(menu.addon_section and cat == menu.addon_section)
         rows = []
@@ -934,7 +756,6 @@ def build_shop_block_data(shop_name, src, menu: Menu):
                 if q == 0 and a == 0:
                     continue
                 rows.append({'name': name, 'qty': q, 'amt': a})
-        # 追加路由进本分类的项目（Excel 导出不打🆕前缀，业主要求；is_new 标记仍保留）
         if not is_addon:
             is_pos_native = cat in menu.pos_native_sections
             for n, q, a, _cats, _parts in merge_new_items(new_in_section.get(cat, [])):
@@ -947,14 +768,12 @@ def build_shop_block_data(shop_name, src, menu: Menu):
         rows.sort(key=lambda r: -r['amt'])
         blocks.append({'cat': cat, 'kind': 'menu', 'rows': rows})
 
-    # 堂食菜單外（extras 已由上面 route_unmatched_items 算好）
     for src_cat in _sort_extras_cats(extras):
         rows = [{'name': menu.pos_aliases.get(n, n), 'qty': q, 'amt': a}
                 for n, q, a, _m in extras[src_cat]]
         if rows:
             blocks.append({'cat': src_cat, 'kind': 'extra', 'rows': rows})
 
-    # 外賣（按平台、各分类，以 "(外賣 平台) 分类" 作类目前缀，作为菜單外延伸）
     delivery = build_delivery(src, menu)
     for p in delivery:
         platform = p['platform']
@@ -980,23 +799,14 @@ def build_shop_block_data(shop_name, src, menu: Menu):
 
 
 def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_list):
-    """
-    把同 (region, brand, month) 的多家店并排画进一个 sheet。
-
-    shop_blocks_list: list of (shop_name, blocks)
-    布局: 每店 5 列 (分類/排序/品名/數量/金額) + 1 列间隔
-    菜单分类按声明顺序 & 行级对齐（同一分类在所有店占同样的行数，不够的用空行补）。
-    extras / 外賣 段每店独立写在下方（不对齐）。
-    """
     n_shops = len(shop_blocks_list)
     cols_per_shop = 5
     gap = 1
     block_width = cols_per_shop + gap
     total_cols = n_shops * cols_per_shop + max(0, n_shops - 1) * gap
 
-    # 拆每家店的 blocks: 茶位 / 菜单(按分类索引) / extras
     shops = []
-    canonical_cats = []   # 菜单分类的合并顺序（首次出现顺）
+    canonical_cats = []
     for name, blocks in shop_blocks_list:
         tea = None
         menu_by_cat = {}
@@ -1012,7 +822,6 @@ def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_lis
                 extras.append(b)
         shops.append({'name': name, 'tea': tea, 'menu': menu_by_cat, 'extras': extras})
 
-    # 行 1：总标题
     ws.row_dimensions[1].height = 28
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
     title_cell = ws.cell(row=1, column=1, value=f'{region}門店菜品排行{year}年{month}月')
@@ -1023,10 +832,8 @@ def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_lis
 
     merge_ranges = []
 
-    # 行 2-3：每家店的列宽 / 店名 banner / 表头
     for shop_idx, s in enumerate(shops):
         col_base = 1 + shop_idx * block_width
-
         widths = [12, 5, 30, 7, 9]
         for i, w in enumerate(widths):
             ws.column_dimensions[get_column_letter(col_base + i)].width = w
@@ -1060,7 +867,6 @@ def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_lis
             c.border = BORDER
 
     def write_empty_cells(r, col_base, fill=None):
-        """该店该分类没数据时，画 5 个空格保持表格连续。"""
         for offset in range(5):
             c = ws.cell(row=r, column=col_base + offset, value='')
             if fill:
@@ -1069,7 +875,6 @@ def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_lis
 
     r = 4
 
-    # ===== 茶位段：行级对齐 =====
     max_tea = max((len(s['tea']['rows']) if s['tea'] else 0) for s in shops)
     if max_tea > 0:
         for row_idx in range(max_tea):
@@ -1085,7 +890,6 @@ def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_lis
                               YELLOW, font_first, FONT_DATA)
                 else:
                     write_empty_cells(r + row_idx, col_base, YELLOW)
-        # 茶位分类格合并
         for shop_idx, s in enumerate(shops):
             tea = s['tea']
             if tea and len(tea['rows']) > 1:
@@ -1094,9 +898,8 @@ def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_lis
                     f'{get_column_letter(col_base)}{r}:'
                     f'{get_column_letter(col_base)}{r + len(tea["rows"]) - 1}'
                 )
-        r += max_tea + 1   # 茶位 + 空行
+        r += max_tea + 1
 
-    # ===== 菜单分类段：行级对齐 =====
     for cat in canonical_cats:
         max_rows = max(len(s['menu'].get(cat, {}).get('rows', [])) for s in shops)
         if max_rows == 0:
@@ -1113,13 +916,11 @@ def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_lis
                               row['name'], row['qty'], row['amt'],
                               None, font_first, FONT_DATA)
                 else:
-                    # 该店本分类无数据：第 0 行写分类名灰显，其它空白
                     if row_idx == 0:
                         write_row(r, col_base, cat, '', '—', '', '',
                                   None, FONT_CAT, FONT_DATA)
                     else:
                         write_empty_cells(r + row_idx, col_base)
-        # 分类格合并：每家店各自合并自己的实际数据行（含 0 行的也合 max_rows）
         for shop_idx, s in enumerate(shops):
             col_base = 1 + shop_idx * block_width
             block = s['menu'].get(cat)
@@ -1130,7 +931,6 @@ def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_lis
                 )
         r += max_rows + 1
 
-    # ===== Extras 段：每店独立写（不对齐，因为各店 POS extras 不同）=====
     extras_start_r = r
     for shop_idx, s in enumerate(shops):
         col_base = 1 + shop_idx * block_width
@@ -1150,7 +950,6 @@ def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_lis
                 )
             cur_r += 1
 
-    # 应用合并
     for mr in merge_ranges:
         ws.merge_cells(mr)
         first = mr.split(':')[0]
@@ -1160,24 +959,11 @@ def build_horizontal_sheet(ws, region, brand_short, month, year, shop_blocks_lis
 
 
 def generate_excel_grouped(grouped):
-    """
-    新版多店并排 Excel 输出。
-
-    grouped: list of {
-        'region':       '香港' / '内地' / ...,
-        'brand_short':  '天天',
-        'month':        3,
-        'year':         2026,
-        'shops':        [(shop_name, src, menu), ...]
-    }
-    每条 group 一个 sheet，sheet 名 = f'{region}{brand_short}{month}月'
-    """
     wb = Workbook()
     wb.remove(wb.active)
     seen = {}
     for g in grouped:
         sheet_name = f"{g['region']}{g['brand_short']}{g['month']}月"
-        # Excel 限制 sheet 名 31 字 + 不能重复
         base = sheet_name[:28]
         if base in seen:
             seen[base] += 1
@@ -1197,19 +983,9 @@ def generate_excel_grouped(grouped):
 
 
 def generate_excel_by_brand(grouped):
-    """
-    按品牌拆 Excel：每个品牌输出一个独立的 .xlsx 文件。
-    - 单品牌：直接返回 .xlsx 字节流
-    - 多品牌：打成 .zip 返回
-
-    grouped: 与 generate_excel_grouped 输入相同（已按 region+brand+month 分组）
-
-    返回 (io_bytes, filename, mimetype)。
-    """
     import zipfile
     today = datetime.datetime.now().strftime('%Y%m%d')
 
-    # 按品牌拆桶，保留品牌首次出现顺序
     by_brand = {}
     brand_order = []
     for g in grouped:
@@ -1226,7 +1002,6 @@ def generate_excel_by_brand(grouped):
         mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         return excel_io, filename, mime
 
-    # 多品牌：每个品牌一个 .xlsx，全部塞进 zip
     zip_io = io.BytesIO()
     with zipfile.ZipFile(zip_io, 'w', zipfile.ZIP_DEFLATED) as zf:
         for brand in brand_order:
@@ -1237,14 +1012,6 @@ def generate_excel_by_brand(grouped):
 
 
 def group_shops_for_export(specs_with_data, default_year=None):
-    """
-    按 (region, brand_short, month) 把店铺分组。
-
-    specs_with_data: list of dict {
-        'shop_name', 'src', 'menu', 'region', 'month', 'year'(可选)
-    }
-    返回 list of {'region','brand_short','month','year','shops':[(name,src,menu)]}
-    """
     if default_year is None:
         default_year = datetime.datetime.now().year
 
@@ -1266,9 +1033,6 @@ def group_shops_for_export(specs_with_data, default_year=None):
             order.append(key)
         buckets[key].append((s['shop_name'], s['src'], menu))
 
-    # 排序规则（保证 Excel sheet 顺序稳定）：
-    #   1) 按品牌首次出现顺序（保留用户上传时的品牌顺序）
-    #   2) 同品牌内：region 优先级 内地 → 香港 → 其他，然后月份升序
     REGION_ORDER = {'内地': 0, '香港': 1}
     brand_first_seen = {}
     for k in order:
@@ -1293,8 +1057,9 @@ def group_shops_for_export(specs_with_data, default_year=None):
     ]
 
 
+# ============= 统计 =============
+
 def compute_stats(src, menu: Menu, shop_name: str = None):
-    """从已解析的 src + menu 算统计摘要。传 shop_name 让 STORE_OVERRIDES 生效。"""
     items_patched = menu.items_for_store(shop_name)
     used = menu.collect_used_names(shop_name)
     by_name = precompute_dinein_by_name(src, menu)
@@ -1308,11 +1073,9 @@ def compute_stats(src, menu: Menu, shop_name: str = None):
             if q > 0 or a > 0:
                 matched_items += 1
 
-    # 新菜（路由进 menu sections 但菜单未列）+ 菜單外（route → '__OUT__'）
     new_in_section, extras = route_unmatched_items(by_name, used, menu)
     new_q = sum(x[2] for v in new_in_section.values() for x in v)
     new_a = sum(x[3] for v in new_in_section.values() for x in v)
-    # 新菜计入 dinein 总数（呈现在菜单分类内，业务上属"堂食菜单内"销量）
     dinein_q += new_q
     dinein_a += new_a
 
@@ -1320,7 +1083,6 @@ def compute_stats(src, menu: Menu, shop_name: str = None):
     extras_a = sum(x[2] for v in extras.values() for x in v)
 
     delivery_platforms = build_delivery(src, menu)
-    # delivery_qty / delivery_amt = 所有平台的正常 + 自取（不含补差价）
     dlv_q = dlv_a = 0
     adj_q = adj_a = 0
     delivery_cats = 0
@@ -1346,7 +1108,7 @@ def compute_stats(src, menu: Menu, shop_name: str = None):
         'menu_matched':  matched_items,
         'dinein_qty':    dinein_q,
         'dinein_amt':    dinein_a,
-        'new_qty':       new_q,           # 🆕 新菜数量（已含在 dinein_qty 内）
+        'new_qty':       new_q,
         'new_amt':       new_a,
         'extras_qty':    extras_q,
         'extras_amt':    extras_a,
@@ -1359,7 +1121,6 @@ def compute_stats(src, menu: Menu, shop_name: str = None):
     }
 
 
-# 便利封装: 单文件入口（保留给可能的脚本/测试用）
 def get_stats(file_obj, restaurant_type: str, pos_type: str):
     src = load_source(file_obj, pos_type)
     menu = get_menu(restaurant_type)

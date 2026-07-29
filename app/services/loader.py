@@ -2,7 +2,7 @@
 """
 CSV 菜单配置加载器
 
-每家餐厅一个数据目录 app/menus/data/<key>/：
+每家餐厅一个数据目录 app/data/menus/<key>/：
   menu.csv             菜单主表（分类/菜名/价格/单位/POS写法），运营日常维护的就是这张表
   config.csv           其余规则（外卖标记、丢弃分类、cat_map、关键词……），三列：配置项/键/值
   store_overrides.csv  可选。单店特殊 POS 写法补丁（店铺/菜名/补充POS写法）
@@ -15,20 +15,16 @@ POS 写法多个变体用 | 分隔。文件编码 UTF-8 with BOM（Excel 双击�
     - menu.csv 列出新增的分类/菜品（同名分类则覆盖该分类）；
     - config.csv 的丢弃项/外卖标记等会与被继承方『合并』，scalar 有值则覆盖。
   新增分类默认插在末尾；要指定位置写  category_after,<新分类>,<锚分类>  插到锚分类之后。
-  例（東薈城继承阿城、多一个手作系列、插在飲品后）：
-    extends,,acheng
-    category_after,手作系列,飲品
 """
 import csv
 import os
 
-from .base import Menu
+from app.models.menu import Menu
 
 POS_SEP = '|'
 
 
 def _read_rows(path):
-    """读 CSV 去表头；整行为空的跳过。"""
     with open(path, encoding='utf-8-sig', newline='') as f:
         rows = list(csv.reader(f))
     return [r for r in rows[1:] if any(c.strip() for c in r)]
@@ -47,9 +43,8 @@ def _parse_price(cell, where):
 
 
 def _load_menu_items(path):
-    """menu.csv -> [(分类, [(菜名, 价格, 单位, [POS写法]), ...]), ...] 保持行序"""
     items = []
-    index = {}  # 分类 -> dishes list
+    index = {}
     for lineno, row in enumerate(_read_rows(path), start=2):
         row = (row + [''] * 5)[:5]
         cat, name, price, unit, pos = (c.strip() for c in row)
@@ -59,14 +54,13 @@ def _load_menu_items(path):
             index[cat] = []
             items.append((cat, index[cat]))
         if not name:
-            continue  # 只声明分类（POS 原生分类占位）
+            continue
         index[cat].append(
             (name, _parse_price(price, f'{path} 第{lineno}行'), unit, _split_pos(pos))
         )
     return items
 
 
-# config.csv 各配置项的装配方式
 _SCALARS = {'brand', 'short_name', 'adjust_marker', 'addon_section', 'main_section'}
 _SETS = {
     'drop_category': 'drop_categories',
@@ -93,7 +87,6 @@ _RULE_KEYS = ('cat', 'startswith', 'contains', 'endswith')
 
 
 def _parse_rule_spec(target, spec, where):
-    """route_rule 的『值』(如 'cat=1人套餐;startswith=滷鵝;contains=$') -> 规则 dict"""
     if not target:
         raise ValueError(f'{where}: route_rule 的目标分类(键)不能为空')
     rule = {'target': target}
@@ -115,12 +108,6 @@ def _parse_rule_spec(target, spec, where):
 
 
 def _load_config(path):
-    """config.csv -> (kw, extends, category_after)
-
-    kw: Menu 构造参数 dict（不含 items / store_overrides）
-    extends: 被继承餐厅 key 或 None
-    category_after: { 新分类: 锚分类 }（继承时新分类的插入位置）
-    """
     kw = {name: set() for name in _SETS.values()}
     kw.update({name: {} for name in _DICTS.values()})
     kw['route_rules'] = []
@@ -153,7 +140,6 @@ def _load_config(path):
             raise ValueError(f'{path} 第{lineno}行: 未知配置项「{item}」')
     if delivery:
         kw['delivery_platforms'] = delivery
-    # 空 scalar 不传，沿用 Menu 默认值 / 被继承值
     for s in _SCALARS:
         if s in kw and kw[s] == '':
             del kw[s]
@@ -161,7 +147,6 @@ def _load_config(path):
 
 
 def _load_overrides(path):
-    """store_overrides.csv -> { 店铺: { 菜名: [补充POS写法] } }"""
     overrides = {}
     if not os.path.exists(path):
         return overrides
@@ -175,15 +160,13 @@ def _load_overrides(path):
 
 
 def _merge_config(base, child):
-    """child 覆盖/扩展 base：set 取并集、dict 合并、scalar 有值则覆盖、外卖标记合并。"""
     merged = dict(base)
     for f in _SET_FIELDS:
         merged[f] = set(base.get(f, set())) | set(child.get(f, set()))
     for f in _DICT_FIELDS:
         merged[f] = {**base.get(f, {}), **child.get(f, {})}
-    # route_rules 是列表：子店自己的规则在前(可先命中)，再接基础店的
     merged['route_rules'] = list(child.get('route_rules', [])) + list(base.get('route_rules', []))
-    for f in ('auto_match_category', 'drop_zero_amount'):   # bool：子店有写才覆盖
+    for f in ('auto_match_category', 'drop_zero_amount'):
         if f in child:
             merged[f] = child[f]
     for f in _SCALARS:
@@ -205,7 +188,6 @@ def _merge_config(base, child):
 
 
 def _merge_items(base_items, child_items, category_after):
-    """child 分类合并进 base：同名分类覆盖；新分类插到 category_after 指定锚分类之后（默认末尾）。"""
     result = [[cat, list(dishes)] for cat, dishes in base_items]
 
     def find_idx(cat):
@@ -217,7 +199,7 @@ def _merge_items(base_items, child_items, category_after):
     for ccat, cdishes in child_items:
         idx = find_idx(ccat)
         if idx >= 0:
-            result[idx][1] = list(cdishes)  # 覆盖同名分类
+            result[idx][1] = list(cdishes)
         else:
             anchor = category_after.get(ccat)
             ai = find_idx(anchor) if anchor else -1
@@ -229,7 +211,6 @@ def _merge_items(base_items, child_items, category_after):
 
 
 def _resolve_raw(data_dir):
-    """读取一个目录的 (kw, items, overrides)，若 config 声明 extends 则先递归继承。"""
     kw, extends, category_after = _load_config(os.path.join(data_dir, 'config.csv'))
     items = _load_menu_items(os.path.join(data_dir, 'menu.csv'))
     overrides = _load_overrides(os.path.join(data_dir, 'store_overrides.csv'))
@@ -245,7 +226,6 @@ def _resolve_raw(data_dir):
 
 
 def load_menu_dir(data_dir) -> Menu:
-    """从一个餐厅数据目录构建 Menu 实例（支持 extends 继承）。"""
     kw, items, overrides = _resolve_raw(data_dir)
     if not kw.get('brand'):
         raise ValueError(f'{data_dir}: 缺少必填配置项 brand（自身或被继承的 config.csv 都没有）')

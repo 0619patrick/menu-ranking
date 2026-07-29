@@ -1,15 +1,34 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-.venv/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
 venv/
+.venv/
 env/
-.env
-.DS_Store
-*.swp
-.vscode/
+
+# IDE
 .idea/
-.claude/
-uploads/*.xlsx
-outputs/*.xlsx
-!.gitkeep
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.xlsx
+*.xls
+*.zip
+
+# Logs
+logs/
