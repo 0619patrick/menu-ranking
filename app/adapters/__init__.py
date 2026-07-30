@@ -24,6 +24,7 @@ ADAPTERS = {
     'canyinwang': CanyinwangAdapter,
     'meituan':    MeituanAdapter,
     'pos365':     type('Pos365Adapter', (_PlaceholderAdapter,), {'NAME': '365', 'KEY': 'pos365'}),
+    'eats365':    type('Eats365Adapter', (_PlaceholderAdapter,), {'NAME': 'Eats365', 'KEY': 'eats365'}),
     'keeta':      KeetaAdapter,
 }
 

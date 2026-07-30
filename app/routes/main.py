@@ -120,6 +120,10 @@ def register_routes(app):
     def index():
         return render_template('index.html')
 
+    @app.route('/nutrition')
+    def nutrition():
+        return render_template('nutrition.html')
+
     @app.route('/generate', methods=['POST'])
     def generate():
         try:

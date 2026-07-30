@@ -13,10 +13,42 @@ from app.services.store_service import (
 )
 from app.services.menu_service import list_restaurants
 from app.adapters import list_pos_types
+from app.services.nutrition_service import parse_upload, calculate_nutrition, build_template
 
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+@api_bp.route('/nutrition/import/<kind>', methods=['POST'])
+def api_nutrition_import(kind):
+    if kind not in {'foods', 'sops', 'history'}:
+        return jsonify({'error': '不支持的导入类型'}), 404
+    uploaded = request.files.get('file')
+    if not uploaded or not uploaded.filename:
+        return jsonify({'error': '请选择 Excel 或 CSV 文件'}), 400
+    try:
+        return jsonify(parse_upload(uploaded, kind))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@api_bp.route('/nutrition/calculate', methods=['POST'])
+def api_nutrition_calculate():
+    try:
+        return jsonify(calculate_nutrition(request.get_json(silent=True) or {}))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@api_bp.route('/nutrition/template/<kind>')
+def api_nutrition_template(kind):
+    if kind not in {'foods', 'sops', 'history'}:
+        return jsonify({'error': '不支持的模板类型'}), 404
+    stream, filename = build_template(kind)
+    from flask import send_file
+    return send_file(stream, as_attachment=True, download_name=filename,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 # 启动时初始化数据库

@@ -4,104 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>菜品銷量排行</title>
-<script src="https://cdn.tailwindcss.com">
-// ===== AI 辅助匹配 =====
-
-function getRestaurantKey(shopName) {
-  const cards = document.querySelectorAll('.shop-card');
-  for (const card of cards) {
-    const idx = card.dataset.idx;
-    const nameInput = card.querySelector('input[name="shop_name_' + idx + '"]');
-    const restInput = card.querySelector('input[name="shop_restaurant_' + idx + '"]');
-    if (nameInput && nameInput.value === shopName && restInput) {
-      return restInput.value;
-    }
-  }
-  return currentRestaurant;
-}
-
-function showMatchSuggestions(shopName, itemName) {
-  const restKey = getRestaurantKey(shopName);
-  fetch('/api/match-suggestions', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ restaurant: restKey, unmatched: [itemName] }),
-  })
-  .then(r => r.json())
-  .then(data => {
-    const suggestions = (data.suggestions && data.suggestions[itemName]) || [];
-    renderMatchModal(shopName, restKey, itemName, suggestions);
-  })
-  .catch(err => alert('匹配请求失败: ' + err.message));
-}
-
-function renderMatchModal(shopName, restKey, itemName, suggestions) {
-  const existing = document.getElementById('match-modal');
-  if (existing) existing.remove();
-
-  const modal = document.createElement('div');
-  modal.id = 'match-modal';
-  modal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4';
-  modal.style.background = 'rgba(0,0,0,0.4)';
-
-  let html = '<div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto">';
-  html += '<h3 class="text-lg font-semibold text-gray-900 mb-2">🤖 AI 匹配建议</h3>';
-  html += '<p class="text-sm text-gray-500 mb-1">门店: ' + escHtml(shopName) + '</p>';
-  html += '<p class="text-sm text-gray-600 mb-4">POS 菜名: <code class="bg-gray-100 px-1 rounded">' + escHtml(itemName) + '</code></p>';
-
-  if (suggestions.length === 0) {
-    html += '<p class="text-sm text-amber-600 bg-amber-50 p-3 rounded">⚠️ 未找到相似度超过 30% 的匹配项，请手动在 menu.csv 中配置</p>';
-  } else {
-    html += '<div class="space-y-2 mb-4">';
-    suggestions.forEach((s, i) => {
-      const pct = Math.round(s.score * 100);
-      const color = pct >= 80 ? 'text-green-600' : (pct >= 50 ? 'text-amber-600' : 'text-gray-500');
-      html += '<div class="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer" onclick="confirmMatch('' + jsAttr(shopName) + '','' + jsAttr(restKey) + '','' + jsAttr(s.menu_name) + '','' + jsAttr(itemName) + '')">';
-      html += '  <div class="flex items-center justify-between">';
-      html += '    <div><span class="font-medium text-gray-900">' + escHtml(s.menu_name) + '</span>';
-      html += '      <span class="text-xs text-gray-400 ml-2">(' + escHtml(s.cat) + ')</span></div>';
-      html += '    <span class="text-sm font-bold ' + color + '">' + pct + '%</span>';
-      html += '  </div>';
-      html += '</div>';
-    });
-    html += '</div>';
-  }
-  html += '<div class="flex gap-3 pt-2">';
-  html += '  <button onclick="document.getElementById('match-modal').remove()" class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">關閉</button>';
-  html += '</div></div>';
-  modal.innerHTML = html;
-  document.body.appendChild(modal);
-}
-
-async function confirmMatch(shopName, restKey, menuName, posWriting) {
-  try {
-    const resp = await fetch('/api/confirm-match', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ restaurant: restKey, menu_name: menuName, pos_writing: posWriting }),
-    });
-    const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error || '保存失败');
-
-    // 关闭弹窗
-    const modal = document.getElementById('match-modal');
-    if (modal) modal.remove();
-
-    // 显示成功消息
-    const msg = result.updated ? '✅ 已匹配并保存到菜单' : '✅ POS 写法已存在';
-    const el = document.createElement('div');
-    el.className = 'fixed top-4 right-4 z-50 bg-green-50 text-green-800 px-4 py-2 rounded-lg shadow text-sm';
-    el.textContent = msg;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 3000);
-
-    // 重新加载预览
-    await fetchPreview();
-  } catch (err) {
-    alert('保存失败: ' + err.message);
-  }
-}
-</script>
+<script src="https://cdn.tailwindcss.com"></script>
 <style>
   body { font-family: -apple-system, "PingFang TC", "Microsoft YaHei", sans-serif; }
   .shop-card { transition: all 0.2s; }
@@ -358,7 +261,7 @@ function createShopCard(idx, defaultName, restaurant, pos, region = '香港', mo
   if (month == null) month = new Date().getMonth() + 1;  // 默认当前月
   const monthOpts = Array.from({length: 12}, (_, i) =>
     `<option value="${i+1}" ${i+1 === month ? 'selected' : ''}>${i+1}月</option>`).join('');
-  const regionOpts = ['香港','内地'].map(r =>
+  const regionOpts = ['香港','内地','华南','华东','华北','华中','西南'].map(r =>
     `<option value="${r}" ${r === region ? 'selected' : ''}>${r}</option>`).join('');
   const restOpts = RESTAURANT_PRESETS.map(p => {
     const sel = (p.rest === restaurant && p.pos === pos) ? 'selected' : '';
@@ -494,9 +397,29 @@ document.getElementById('add-shop-btn').onclick = () => {
 const POS_DISPLAY = {
   'canyinwang': '餐飲王',
   'pos365':    '365',
+  'eats365':   'Eats365',
   'meituan':   '美團',
   'keeta':     'Keeta',
 };
+
+// 门店名 → 地理区域（前端自动归类，不依赖后端 region 字段）
+function getStoreRegion(name, label) {
+  const s = (name || '') + (label || '');
+  if (s.includes('香港') || s.includes('中環') || s.includes('圓方') ||
+      s.includes('銅鑼灣') || s.includes('太古城') || s.includes('淘大') ||
+      s.includes('東涌') || s.includes('沙田') || s.includes('K11') ||
+      s.includes('大館')) return '🇭🇰 香港';
+  if (s.includes('深圳') || s.includes('深业') || s.includes('佛山') || s.includes('海口') ||
+      s.includes('南宁') || s.includes('厦门') || s.includes('福州')) return '华南';
+  if (s.includes('上海') || s.includes('杭州') || s.includes('南京') ||
+      s.includes('宁波') || s.includes('温州')) return '华东';
+  if (s.includes('北京') || s.includes('天津')) return '华北';
+  if (s.includes('武汉') || s.includes('长沙') || s.includes('郑州') || s.includes('郑东')) return '华中';
+  if (s.includes('成都') || s.includes('重庆')) return '西南';
+  return '内地';
+}
+
+const GEO_REGION_ORDER = ['🇭🇰 香港', '华南', '华东', '华北', '华中', '西南', '内地'];
 
 // 每个餐厅的门店列表（按地区分组），从 API 加载
 // 没有门店的餐厅留空对象, 顶部 tab 会显示"暫無門店"
@@ -554,33 +477,108 @@ function qsIsSelected(shopName) {
   return found;
 }
 
+// 折叠状态（默认收起）
+let geoCollapseState = {};
+
 function qsRender() {
   const panel = document.getElementById('qs-stores-panel');
   const groups = QS_STORES_BY_RESTAURANT[currentRestaurant] || {};
-  const regions = Object.keys(groups).filter(r => groups[r] && groups[r].length > 0);
+  const dbRegions = Object.keys(groups).filter(r => groups[r] && groups[r].length > 0);
 
-  if (regions.length === 0) {
+  if (dbRegions.length === 0) {
     panel.innerHTML = '<p class="text-xs text-gray-400 py-1">暫無門店（菜單/POS 配置尚未補充）</p>';
     return;
   }
 
-  panel.innerHTML = regions.map(region => {
-    const btns = groups[region].map(s => {
-      const selected = qsIsSelected(s.name);
-      const cls = selected
-        ? 'px-3 py-1.5 text-sm rounded-full border border-blue-500 bg-blue-600 text-white transition'
-        : 'px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition';
-      const posSuffix = s.pos && POS_DISPLAY[s.pos] ? `（${POS_DISPLAY[s.pos]}）` : '';
-      const display = s.label + posSuffix;
-      const p = s.pos || '';
-      const r = s.rest || currentRestaurant;   // 单店可覆盖菜单（如内地天天用 tiantian_cn）
-      return `<button type="button" onclick="qsToggleStore('${s.name}','${r}','${p}','${region}')" class="${cls}">${display}</button>`;
+  // 扁平化所有门店，按地理区域重新分组
+  const geoGroups = {};
+  dbRegions.forEach(dbReg => {
+    groups[dbReg].forEach(s => {
+      const geo = getStoreRegion(s.name, s.label);
+      if (!geoGroups[geo]) geoGroups[geo] = [];
+      geoGroups[geo].push({ ...s, _dbRegion: dbReg });
+    });
+  });
+
+  // 一级：香港 / 内地
+  const hkGeo = '🇭🇰 香港';
+  const hkStores = geoGroups[hkGeo] || [];
+  const subRegions = GEO_REGION_ORDER.filter(g => g !== hkGeo && geoGroups[g] && geoGroups[g].length > 0);
+
+  panel.innerHTML = '';
+
+  // ── 香港（一级，直接展示门店按钮） ──
+  if (hkStores.length > 0) {
+    const key = 'geo_hk';
+    const open = geoCollapseState[key] === true;
+    panel.innerHTML += `
+      <div class="border border-gray-200 rounded-lg overflow-hidden">
+        <div class="bg-gray-100 px-4 py-2.5 flex items-center justify-between cursor-pointer select-none hover:bg-gray-200 transition"
+             onclick="toggleGeo('${key}')">
+          <span class="text-sm font-semibold text-gray-700">${hkGeo}</span>
+          <span class="text-xs text-gray-400" id="chev-${key}">${open ? '▲' : '▼'}</span>
+        </div>
+        <div id="body-${key}" class="${open ? '' : 'hidden'} flex gap-2 flex-wrap px-4 py-3">
+          ${hkStores.map(s => buildStoreBtn(s)).join('')}
+        </div>
+      </div>`;
+  }
+
+  // ── 内地（一级标题，内嵌二级区域） ──
+  if (subRegions.length > 0) {
+    const mainKey = 'geo_main';
+    const mainOpen = geoCollapseState[mainKey] === true;
+    const subHtml = subRegions.map(sub => {
+      const subKey = 'geo_' + sub;
+      const subOpen = geoCollapseState[subKey] === true;
+      return `
+        <div>
+          <div class="flex items-center justify-between cursor-pointer select-none px-3 py-1.5 hover:bg-gray-50 transition"
+               onclick="toggleGeo('${subKey}')">
+            <span class="text-xs font-medium text-gray-500">${sub}</span>
+            <span class="text-xs text-gray-400" id="chev-${subKey}">${subOpen ? '▲' : '▼'}</span>
+          </div>
+          <div id="body-${subKey}" class="${subOpen ? '' : 'hidden'} flex gap-2 flex-wrap px-3 py-2">
+            ${geoGroups[sub].map(s => buildStoreBtn(s)).join('')}
+          </div>
+        </div>`;
     }).join('');
-    return `<div class="flex gap-2 items-center flex-wrap">
-      <span class="text-sm text-gray-500 font-medium w-10 flex-shrink-0">${region}:</span>
-      ${btns}
-    </div>`;
-  }).join('');
+
+    panel.innerHTML += `
+      <div class="border border-gray-200 rounded-lg overflow-hidden mt-3">
+        <div class="bg-gray-100 px-4 py-2.5 flex items-center justify-between cursor-pointer select-none hover:bg-gray-200 transition"
+             onclick="toggleGeo('${mainKey}')">
+          <span class="text-sm font-semibold text-gray-700">内地</span>
+          <span class="text-xs text-gray-400" id="chev-${mainKey}">${mainOpen ? '▲' : '▼'}</span>
+        </div>
+        <div id="body-${mainKey}" class="${mainOpen ? '' : 'hidden'} divide-y divide-gray-100">
+          ${subHtml}
+        </div>
+      </div>`;
+  }
+}
+
+function buildStoreBtn(s) {
+  const selected = qsIsSelected(s.name);
+  const cls = selected
+    ? 'px-3 py-1.5 text-sm rounded-full border border-blue-500 bg-blue-600 text-white transition'
+    : 'px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition';
+  const posSuffix = s.pos && POS_DISPLAY[s.pos] ? `（${POS_DISPLAY[s.pos]}）` : '';
+  const display = s.label + posSuffix;
+  const p = s.pos || '';
+  const r = s.rest || currentRestaurant;
+  const dbReg = s._dbRegion || '香港';
+  return `<button type="button" onclick="qsToggleStore('${s.name}','${r}','${p}','${dbReg}')" class="${cls}">${display}</button>`;
+}
+
+function toggleGeo(key) {
+  const body = document.getElementById('body-' + key);
+  const chev = document.getElementById('chev-' + key);
+  if (!body || !chev) return;
+  const isHidden = body.classList.contains('hidden');
+  body.classList.toggle('hidden');
+  geoCollapseState[key] = isHidden;
+  chev.textContent = isHidden ? '▲' : '▼';
 }
 
 // 等待门店数据加载完成后初始化
@@ -1236,7 +1234,7 @@ function renderMatchModal(shopName, restKey, itemName, suggestions) {
     suggestions.forEach((s, i) => {
       const pct = Math.round(s.score * 100);
       const color = pct >= 80 ? 'text-green-600' : (pct >= 50 ? 'text-amber-600' : 'text-gray-500');
-      html += '<div class="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer" onclick="confirmMatch('' + jsAttr(shopName) + '','' + jsAttr(restKey) + '','' + jsAttr(s.menu_name) + '','' + jsAttr(itemName) + '')">';
+      html += `<div class="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer" onclick="confirmMatch('${jsAttr(shopName)}','${jsAttr(restKey)}','${jsAttr(s.menu_name)}','${jsAttr(itemName)}')">`;
       html += '  <div class="flex items-center justify-between">';
       html += '    <div><span class="font-medium text-gray-900">' + escHtml(s.menu_name) + '</span>';
       html += '      <span class="text-xs text-gray-400 ml-2">(' + escHtml(s.cat) + ')</span></div>';
@@ -1247,7 +1245,7 @@ function renderMatchModal(shopName, restKey, itemName, suggestions) {
     html += '</div>';
   }
   html += '<div class="flex gap-3 pt-2">';
-  html += '  <button onclick="document.getElementById('match-modal').remove()" class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">關閉</button>';
+  html += `  <button onclick="document.getElementById('match-modal').remove()" class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">關閉</button>`;
   html += '</div></div>';
   modal.innerHTML = html;
   document.body.appendChild(modal);

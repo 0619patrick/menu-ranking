@@ -26,6 +26,7 @@ _SEED_STORES = [
     # 阿城 - 香港
     {'name': '香港阿城淘大',   'label': '淘大',   'restaurant': 'acheng', 'pos': 'canyinwang', 'region': '香港'},
     {'name': '香港阿城太古',   'label': '太古',   'restaurant': 'acheng', 'pos': 'canyinwang', 'region': '香港'},
+    {'name': '香港阿城沙田',   'label': '沙田',   'restaurant': 'acheng', 'pos': 'canyinwang', 'region': '香港'},
     {'name': '香港阿城東涌',   'label': '東涌',   'restaurant': 'acheng_donghui', 'pos': 'canyinwang', 'region': '香港'},
     # 阿城 - 内地
     {'name': '深圳阿城', 'label': '深圳阿城', 'restaurant': 'acheng_cn', 'pos': 'meituan', 'region': '内地'},
@@ -33,7 +34,7 @@ _SEED_STORES = [
     {'name': '香港四季芬芳沙田', 'label': '沙田', 'restaurant': 'sijifenfang', 'pos': 'canyinwang', 'region': '香港'},
     # 泰菜
     {'name': '香港泰菜中環', 'label': '中環', 'restaurant': 'taicai', 'pos': 'canyinwang', 'region': '香港'},
-    {'name': '香港泰菜沙田', 'label': '沙田', 'restaurant': 'taicai_shatian', 'pos': 'canyinwang', 'region': '香港'},
+    {'name': '香港泰菜沙田', 'label': '沙田', 'restaurant': 'taicai_shatian', 'pos': 'eats365', 'region': '香港'},
 ]
 
 
