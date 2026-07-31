@@ -13,11 +13,32 @@ from app.services.store_service import (
 )
 from app.services.menu_service import list_restaurants
 from app.adapters import list_pos_types
-from app.services.nutrition_service import parse_upload, calculate_nutrition, build_template
+from app.services.nutrition_service import (
+    parse_upload, calculate_nutrition, calculate_dishes, build_template,
+    search_cfs_food, get_cfs_food,
+)
 
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+@api_bp.route('/nutrition/cfs-search')
+def api_nutrition_cfs_search():
+    try:
+        return jsonify({'results': search_cfs_food(request.args.get('q', ''))})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@api_bp.route('/nutrition/cfs-food', methods=['POST'])
+def api_nutrition_cfs_food():
+    data = request.get_json(silent=True) or {}
+    try:
+        return jsonify(get_cfs_food(str(data.get('fg_id', '')), str(data.get('fsg_id', '')),
+                                    str(data.get('food_id', ''))))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
 
 
 @api_bp.route('/nutrition/import/<kind>', methods=['POST'])
@@ -37,6 +58,14 @@ def api_nutrition_import(kind):
 def api_nutrition_calculate():
     try:
         return jsonify(calculate_nutrition(request.get_json(silent=True) or {}))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@api_bp.route('/nutrition/calculate-dishes', methods=['POST'])
+def api_nutrition_calculate_dishes():
+    try:
+        return jsonify(calculate_dishes(request.get_json(silent=True) or {}))
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 

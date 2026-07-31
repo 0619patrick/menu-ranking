@@ -36,6 +36,22 @@ def test_nutrition_calculation(client):
     assert resp.get_json()['details'][0]['source_id'] == 'TEST-001'
 
 
+def test_dish_calculation_matches_internal_food_code(client):
+    food = {'name': '大米', 'food_code': 'A10-7117', 'source': 'CFS',
+            'energy': 100, 'protein': 2, 'fat': 1, 'saturated_fat': 0.2,
+            'trans_fat': 0, 'carbs': 20, 'sugar': 0, 'fiber': 0.5,
+            'sodium': 5, 'potassium': 10, 'calcium': 3, 'cholesterol': 0}
+    dish = {'dish': '测试餐', 'meal': 'A', 'ingredients': [
+        {'name': '泰国香米', 'code': 'A10-7117', 'weight': 150},
+        {'name': '清水', 'code': '', 'weight': 100},
+    ]}
+    resp = client.post('/api/nutrition/calculate-dishes', json={'foods': [food], 'dishes': [dish]})
+    assert resp.status_code == 200
+    result = resp.get_json()['results'][0]
+    assert result['totals']['energy'] == 150.0
+    assert result['complete'] is True
+
+
 def test_preview_no_data(client):
     resp = client.post('/preview', data={})
     assert resp.status_code == 400

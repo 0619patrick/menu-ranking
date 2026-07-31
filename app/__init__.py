@@ -84,7 +84,8 @@ def create_app(config_name: str = None) -> Flask:
     app = Flask(__name__,
                 template_folder='templates',
                 static_folder='static')
-    app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
+    # Existing monthly SOP workbooks contain embedded dish photos and can exceed 200MB.
+    app.config['MAX_CONTENT_LENGTH'] = 350 * 1024 * 1024
     app.config['TEMPLATES_AUTO_RELOAD'] = True
 
     # 加载配置
