@@ -1,2 +1,101 @@
-配置项,键,值
+﻿配置项,键,值
 brand,,鮨政
+short_name,,鮨政
+drop_category,,打包盒
+drop_category,,餐具
+drop_category,,餐盒
+drop_category,,品牌展示
+drop_category,,加料
+drop_category,,其他服务
+drop_category,,临时菜单
+drop_category,,其他菜单
+drop_category,,--
+delivery_platform,美团,美团
+delivery_platform,抖音,抖音
+delivery_platform,小程序,小程序
+delivery_platform,外卖自营,外卖自营
+pos_rename,（小程序）飘雪鹅肝金枪鱼寿司,(小程序)飘雪鹅肝金枪鱼寿司
+pos_rename,【抖音】一式·omakase单人御献立,【抖音】一式·Omakase单人御献立
+pos_rename,【抖音】一式·omakase双人御献立,【抖音】一式·Omakase双人御献立
+pos_rename,【美团】一式 ·omakase双人御献立,【美团】一式 · Omakase双人御献立
+pos_rename,Qmakase级·三文鱼寿司（单贯）,Omakase级·三文鱼寿司（单贯）
+pos_rename,omakase级·三文鱼寿司（单贯）,Omakase级·三文鱼寿司（单贯）
+pos_rename,Qmakase级·三文鱼籽寿司（单贯）,Omakase级·三文鱼籽寿司（单贯）
+pos_rename,omakase级·三文鱼籽寿司（单贯）,Omakase级·三文鱼籽寿司（单贯）
+pos_rename,Omakase 级·三文鱼腩寿司 (单贯),Omakase级·三文鱼腩寿司（单贯）
+pos_rename,omakase级·三文鱼鱼腩寿司（单贯）,Qmakase级·三文鱼鱼腩寿司（单贯）
+pos_rename,Qmakase级·半熟虎虾寿司（单贯）,Omakase级·半熟虎虾寿司（单贯）
+pos_rename,omakase级·半熟虎虾寿司（单贯）,Omakase级·半熟虎虾寿司（单贯）
+pos_rename,Qmakase级·帆立贝寿司（单贯）,Omakase级·帆立贝寿司（单贯）
+pos_rename,omakase级·帆立贝寿司（单贯）,Omakase级·帆立贝寿司（单贯）
+pos_rename,Qmakase级·海胆寿司（单贯）,Omakase级·海胆寿司（单贯）
+pos_rename,omakase级·海胆寿司（单贯）,Omakase级·海胆寿司（单贯）
+pos_rename,Qmakase级·牡丹虾寿司（单贯）,Omakase级·牡丹虾寿司（单贯）
+pos_rename,omakase级·牡丹虾寿司（单贯）,Omakase级·牡丹虾寿司（单贯）
+pos_rename,Qmakase级·甜虾寿司（单贯）,Omakase级·甜虾寿司（单贯）
+pos_rename,omakase级·甜虾寿司（单贯）,Omakase级·甜虾寿司（单贯）
+pos_rename,Qmakase级·章红鱼寿司（单贯）,Omakase级·章红鱼寿司（单贯）
+pos_rename,Qmakase级·章红鱼腹寿司（单贯）,Omakase级·章红鱼腹寿司（单贯）
+pos_rename,Qmakase级·紫苏纹甲鱿鱼寿司（单贯）,Omakase级·紫苏纹甲鱿鱼寿司（单贯）
+pos_rename,omakase级·紫苏纹甲鱿鱼寿司（单贯）,Omakase级·紫苏纹甲鱿鱼寿司（单贯）
+pos_rename,Omakase 级·金枪鱼中腹寿司（单贯）,Omakase级·金枪鱼中腹寿司（单贯）
+pos_rename,Qmakase级·金枪鱼中腹寿司（单贯）,Omakase级·金枪鱼中腹寿司（单贯）
+pos_rename,omakase级·金枪鱼中腹寿司（单贯）,Omakase级·金枪鱼中腹寿司（单贯）
+pos_rename,Qmakase级·金枪鱼大腹寿司（单贯）,Omakase级·金枪鱼大腹寿司（单贯）
+pos_rename,omakase级·金枪鱼大腹寿司（单贯）,Omakase级·金枪鱼大腹寿司（单贯）
+pos_rename,Qmakase级·金枪鱼赤身寿司（单贯）,Omakase级·金枪鱼赤身寿司（单贯）
+pos_rename,omakase级·金枪鱼赤身寿司（单贯）,Omakase级·金枪鱼赤身寿司（单贯）
+pos_rename,Qmakase级·飘雪鹅肝金枪鱼寿司（单贯）,Omakase级·飘雪鹅肝金枪鱼寿司（单贯）
+pos_rename,omakase级·飘雪鹅肝金枪鱼寿司（单贯）,Omakase级·飘雪鹅肝金枪鱼寿司（单贯）
+pos_rename,Omakase 级·黑松露金鲷寿司（单贯）,Omakase级·黑松露金鲷寿司（单贯）
+pos_rename,Qmakase级·黑松露金鲷寿司（单贯）,Omakase级·黑松露金鲷寿司（单贯）
+pos_rename,omakase级·黑松露金鲷寿司（单贯）,Omakase级·黑松露金鲷寿司（单贯）
+pos_rename,omakase级海胆寿司（单贯）,omakase级海胆寿司（单件）
+pos_rename,omakase级金枪鱼大腹寿司（单贯）,omakase级金枪鱼大腹寿司（单件）
+pos_rename,omakase级金枪鱼赤身寿司（单贯）,omakase级金枪鱼赤身寿司（单件）
+pos_rename,omakase级黑松露金鲷寿司（单贯）,omakase级黑松露金鲷寿司（单件）
+pos_rename,三文 鱼刺身,三文鱼刺身
+pos_rename,三文鱼腩 刺身,三文鱼腩刺身
+pos_rename,三文鱼腩寿 司,三文鱼腩寿司
+pos_rename,冰 沙,冰沙
+pos_rename,原味三文鱼刺身(单片厚切),原味三文鱼刺身（单片厚切）
+pos_rename,厨师发办·Omakase 348,厨师发办·Omakase348
+pos_rename,可口 可乐,可口可乐
+pos_rename,天妇罗 手卷,天妇罗手卷
+pos_rename,左口鱼寿司·,左口鱼寿司
+pos_rename,帆立贝寿司·,帆立贝寿司
+pos_rename,星鳗鱼寿司（单件）,星鳗鱼寿司（单贯）
+pos_rename,水果·,水果
+pos_rename,流心鹅肝 手卷,流心鹅肝手卷
+pos_rename,海胆刺身（50g),海胆刺身（50g）
+pos_rename,炙烤三文鱼寿司 (单件),炙烤三文鱼寿司（单件）
+pos_rename,炙烤三文鱼寿司（单贯）,炙烤三文鱼寿司（单件）
+pos_rename,炙烤和牛寿司（单贯）,炙烤和牛寿司（单件）
+pos_rename,炙烤左口鱼裙边寿司（单件）,炙烤左口鱼裙边寿司（单贯）
+pos_rename,炙烤牛肉寿司（单件）,炙烤牛肉寿司（单贯）
+pos_rename,炙烤蒲烧鳗鱼寿司(单贯),炙烤蒲烧鳗鱼寿司（单贯）
+pos_rename,炙烤蒲烧鳗鱼寿司（单件）,炙烤蒲烧鳗鱼寿司（单贯）
+pos_rename,炙烤鹅肝寿司 (单件),炙烤鹅肝寿司（单贯）
+pos_rename,炙烤鹅肝寿司(单件),炙烤鹅肝寿司（单贯）
+pos_rename,炙烤鹅肝寿司(单贯),炙烤鹅肝寿司（单贯）
+pos_rename,炙烤鹅肝寿司（单件）,炙烤鹅肝寿司（单贯）
+pos_rename,玉子寿司（单件）,玉子寿司（单贯）
+pos_rename,玉子烧寿司（单贯）,玉子烧寿司（单件）
+pos_rename,甄选谷饲·澳洲和牛  铁板炙煎霜降西冷,甄选谷饲·澳洲和牛 铁板炙煎霜降西冷
+pos_rename,皇帝蟹棒寿司·,皇帝蟹棒寿司
+pos_rename,皇帝蟹棒寿司（单件）,皇帝蟹棒寿司（单贯）
+pos_rename,章红鱼 刺身,章红鱼刺身
+pos_rename,章红鱼 寿司,章红鱼寿司
+pos_rename,章红鱼腹 寿司,章红鱼腹寿司
+pos_rename,紫苏纹甲鱿鱼寿司·,紫苏纹甲鱿鱼寿司
+pos_rename,蒲烧鳗鱼寿司 (单件),蒲烧鳗鱼寿司（单贯）
+pos_rename,蒲烧鳗鱼寿司(单贯),蒲烧鳗鱼寿司（单贯）
+pos_rename,蒲烧鳗鱼寿司（单件）,蒲烧鳗鱼寿司（单贯）
+pos_rename,蒲烧鳗鱼 手卷,蒲烧鳗鱼手卷
+pos_rename,蒲烧鳗鱼手卷·,蒲烧鳗鱼手卷
+pos_rename,赠送 三文鱼手卷,赠送三文鱼手卷
+pos_rename,赤红虾 寿司,赤红虾寿司
+pos_rename,青提 汁,青提汁
+pos_rename,飞鱼籽寿司（单件）,飞鱼籽寿司（单贯）
+pos_rename,鲷鱼 汤,鲷鱼汤
+pos_rename,鳌虾刺身（一只）,鳌虾刺身(一只)

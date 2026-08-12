@@ -69,6 +69,12 @@
         </div>
       </div>
 
+      <div id="memory-hint" class="hidden flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 mb-3">
+        <span class="text-sm text-blue-700">已恢复上次选择的店铺（文件需重新上传）</span>
+        <button type="button" id="clear-memory-btn"
+          class="text-xs px-3 py-1.5 bg-white border border-blue-300 text-blue-700 rounded-md hover:bg-blue-100 transition whitespace-nowrap">清除记忆，恢复默认</button>
+      </div>
+
       <div id="shops-container" class="space-y-4"></div>
 
       <div class="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
@@ -255,6 +261,7 @@ const RESTAURANT_PRESETS = [
   // 沙田泰菜 Here Thai Market：与中環是两套独立菜单。POS 类型待定，先放餐飲王/美團两个预设供选择
   { key: 'taicai_shatian.canyinwang', label: '沙田泰菜（餐飲王）',   rest: 'taicai_shatian', pos: 'canyinwang' },
   { key: 'taicai_shatian.meituan',    label: '沙田泰菜（美團）',     rest: 'taicai_shatian', pos: 'meituan'    },
+  { key: 'yizheng.meituan',           label: '鮨政（美團）',         rest: 'yizheng',        pos: 'meituan'    },
 ];
 
 function createShopCard(idx, defaultName, restaurant, pos, region = '香港', month = null) {
@@ -321,6 +328,56 @@ function addShop(defaultName = '', restaurant = 'tiantian', pos = 'canyinwang', 
   shopCount++;
   attachShopEvents();
   updateRemoveButtons();
+}
+
+// ===== 店铺记忆（记住上次选择的店） =====
+const SHOP_MEMORY_KEY = 'yizheng_shop_memory_v1';
+
+function saveShopMemory() {
+  const cards = [];
+  document.querySelectorAll('.shop-card').forEach(card => {
+    const idx = card.dataset.idx;
+    const name = card.querySelector(`input[name="shop_name_${idx}"]`);
+    const rest = card.querySelector(`input[name="shop_restaurant_${idx}"]`);
+    const pos  = card.querySelector(`input[name="shop_pos_${idx}"]`);
+    const region = card.querySelector(`select[name="shop_region_${idx}"]`);
+    const month  = card.querySelector(`select[name="shop_month_${idx}"]`);
+    if (name && name.value.trim()) {
+      cards.push({
+        name: name.value.trim(),
+        rest: rest ? rest.value : 'tiantian',
+        pos:  pos  ? pos.value  : 'canyinwang',
+        region: region ? region.value : '香港',
+        month: month  ? parseInt(month.value, 10) : new Date().getMonth() + 1,
+      });
+    }
+  });
+  try {
+    localStorage.setItem(SHOP_MEMORY_KEY, JSON.stringify(cards));
+  } catch (e) { /* localStorage 不可用时静默 */ }
+  return cards;
+}
+
+function loadShopMemory() {
+  try {
+    const raw = localStorage.getItem(SHOP_MEMORY_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data.filter(c => c && c.name) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearShopMemory() {
+  try {
+    localStorage.removeItem(SHOP_MEMORY_KEY);
+  } catch (e) { /* 忽略 */ }
+}
+
+function showMemoryHint() {
+  const el = document.getElementById('memory-hint');
+  if (el) el.classList.remove('hidden');
 }
 
 function attachShopEvents() {
@@ -583,10 +640,30 @@ function toggleGeo(key) {
 
 // 等待门店数据加载完成后初始化
 loadStores().then(() => {
+  const saved = loadShopMemory();
+  if (saved && saved.length > 0) {
+    // 恢复上次选择的店铺卡片（文件无法持久化，需重新选择）
+    saved.forEach(c => addShop(c.name, c.rest, c.pos, c.region, c.month));
+    setRestaurant(saved[0].rest || 'tiantian');
+    if (saved.length > 0) showMemoryHint();
+  } else {
+    addShop('香港天天太古城', 'tiantian', 'canyinwang', '香港');
+    addShop('香港天天沙田',   'tiantian', 'canyinwang', '香港');
+    setRestaurant('tiantian');
+  }
+});
+
+// 清除记忆按钮
+document.getElementById('clear-memory-btn').onclick = function () {
+  clearShopMemory();
+  document.getElementById('memory-hint').classList.add('hidden');
+  // 清空现有店铺卡片，恢复默认
+  document.getElementById('shops-container').innerHTML = '';
+  shopCount = 0;
   addShop('香港天天太古城', 'tiantian', 'canyinwang', '香港');
   addShop('香港天天沙田',   'tiantian', 'canyinwang', '香港');
   setRestaurant('tiantian');
-});
+};
 
 // ===== AI 数据拉取 =====
 
@@ -714,6 +791,8 @@ function buildFormData() {
       count++;
     }
   });
+  // 记住上次选择的店铺（文件无法持久化，需重新上传）
+  saveShopMemory();
   formData.set('shop_count', count);
   return formData;
 }
@@ -887,8 +966,17 @@ function switchTab(idx) {
 
 function renderShopPreview(shopData, shopIdx) {
   mergePrefix = shopIdx || 0;   // ▶ id 用这家店的索引做前缀，避免跨店撞 id
+  const warnings = (shopData.warnings || []).map(w => `
+    <div class="bg-amber-50 border border-amber-300 text-amber-900 px-3 py-2 mb-3 rounded text-xs">
+      <span class="font-semibold">⚠️ 配置警告:</span>
+      POS 寫法「${escHtml(w.pos_name)}」(${w.qty} 份) 同時被
+      ${w.dishes.map(d => `「${escHtml(d)}」`).join('、')}
+      引用，該寫法的銷量/金額會被重複計算。
+      <a href="/admin" target="_blank" class="underline text-amber-700 hover:text-amber-900">去菜單配置檢查</a>
+    </div>`).join('');
   return `
     <div class="overflow-x-auto">
+      ${warnings}
       <div class="grid grid-cols-[1fr_4px_1fr] gap-3 pb-2 min-w-[920px]">
         ${renderDineinTable(shopData)}
         <div class="bg-gray-200 rounded"></div>

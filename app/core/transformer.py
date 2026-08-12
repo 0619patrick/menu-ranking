@@ -352,7 +352,7 @@ def build_delivery(src, menu: Menu):
             'selftake_rows' if '自取' in cat else 'normal_rows'
         )
         for _, r in sub.iterrows():
-            platforms_data[platform][bucket].append((cat, r['项目名称'], int(r['数量']), int(r['金额'])))
+            platforms_data[platform][bucket].append((cat, r['项目名称'], int(r['数量']), int(round(r['金额']))))
 
     result = []
     for platform in menu.delivery_platforms.keys():
@@ -491,6 +491,8 @@ def build_sheet(ws, shop_name, src, menu: Menu):
         tea_cat, tea_items = items_patched[0]
         for idx, (name, price, unit, pos_names) in enumerate(tea_items):
             q, a = get_dinein_sales(pos_names, by_name)
+            if q == 0 and a == 0:
+                continue
             write_dinein_row(current_row_dinein,
                              [tea_cat, idx+1, name, price, q, a],
                              fill=YELLOW, font=FONT_CAT if idx == 0 else FONT_DATA)
@@ -517,13 +519,19 @@ def build_sheet(ws, shop_name, src, menu: Menu):
         for name, price, unit, pos_names in items:
             if is_addon:
                 paid_q, paid_a, free_q = get_addon_split(pos_names, addon_lookup)
+                if paid_q == 0 and paid_a == 0 and free_q == 0:
+                    continue
                 disp_name = f'{name}〔套餐內含 {free_q}次〕' if free_q > 0 else name
                 items_with_sales.append((disp_name, price, unit, paid_q, paid_a))
             else:
                 q, a = get_dinein_sales(pos_names, by_name)
+                if q == 0 and a == 0:
+                    continue
                 items_with_sales.append((name, price, unit, q, a))
         if not is_addon:
             for n, q, a, _cats, _parts in merge_new_items(new_in_section.get(cat, [])):
+                if q == 0 and a == 0:
+                    continue
                 items_with_sales.append((n, '', '', q, a))
         items_with_sales.sort(key=lambda x: -x[4])
 
@@ -639,6 +647,8 @@ def build_preview_data(shop_name, src, menu: Menu):
         tea_cat, tea_items_raw = items_patched[0]
         for name, price, unit, pos_names in tea_items_raw:
             q, a, variants = get_dinein_sales_detail(pos_names, by_name)
+            if q == 0 and a == 0:
+                continue
             tea_rows.append({'name': name, 'price': price, 'unit': unit,
                              'qty': q, 'amt': a,
                              'merged': _audit_merged(pos_names, by_name, variants, name)})
@@ -655,6 +665,9 @@ def build_preview_data(shop_name, src, menu: Menu):
         if menu.addon_section and cat == menu.addon_section:
             for name, price, unit, pos_names in items_raw:
                 paid_q, paid_a, free_q = get_addon_split(pos_names, addon_lookup)
+                # 免费次数>0 也展示（套餐内含信息），全 0 则隐藏
+                if paid_q == 0 and paid_a == 0 and free_q == 0:
+                    continue
                 rows.append({'name': name, 'price': price, 'unit': unit,
                              'qty': paid_q, 'amt': paid_a,
                              'free_qty': free_q, 'merged': []})
@@ -662,11 +675,15 @@ def build_preview_data(shop_name, src, menu: Menu):
         else:
             for name, price, unit, pos_names in items_raw:
                 q, a, variants = get_dinein_sales_detail(pos_names, by_name)
+                if q == 0 and a == 0:
+                    continue
                 rows.append({'name': name, 'price': price, 'unit': unit,
                              'qty': q, 'amt': a,
                              'merged': _audit_merged(pos_names, by_name, variants, name)})
             is_pos_native = cat in menu.pos_native_sections
             for n, q, a, pos_cats, parts in merge_new_items(new_in_section.get(cat, [])):
+                if q == 0 and a == 0:
+                    continue
                 row = {'name': n, 'price': '', 'unit': '',
                        'qty': q, 'amt': a,
                        'pos_cat': '/'.join(pos_cats),
@@ -688,6 +705,20 @@ def build_preview_data(shop_name, src, menu: Menu):
 
     delivery_platforms = build_delivery(src, menu)
 
+    warnings = []
+    for dup in menu.find_duplicate_pos_names(shop_name):
+        # 只对源数据里实际出现过的写法报警，避免菜单里写了但没销量也报
+        qty = int(src.loc[src['项目名称'] == dup['pos_name'], '数量'].sum()) \
+            if (src['项目名称'] == dup['pos_name']).any() else 0
+        if qty > 0:
+            warnings.append({
+                'type': 'duplicate_pos_name',
+                'pos_name': dup['pos_name'],
+                'dishes': dup['dishes'],
+                'categories': dup['categories'],
+                'qty': qty,
+            })
+
     return {
         'shop_name': shop_name,
         'brand': menu.brand,
@@ -695,6 +726,7 @@ def build_preview_data(shop_name, src, menu: Menu):
         'menu': menu_sections,
         'extras': extras_sections,
         'delivery': delivery_platforms,
+        'warnings': warnings,
     }
 
 
