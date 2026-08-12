@@ -124,3 +124,19 @@ class Menu:
             for name, price, unit, pos_names in dishes:
                 used.update(pos_names)
         return used
+
+    def find_duplicate_pos_names(self, shop_name: Optional[str] = None) -> list:
+        """检测同一个 POS 写法被多个菜单项引用的问题（会导致销量/金额重复计算）。
+
+        返回: [{'pos_name': str, 'dishes': [菜名...], 'categories': [分类...]}, ...]
+        """
+        usage = {}
+        for cat, dishes in self.items_for_store(shop_name):
+            for name, price, unit, pos_names in dishes:
+                for pn in pos_names:
+                    usage.setdefault(pn, []).append((cat, name))
+        return [
+            {'pos_name': pn, 'dishes': [d for _, d in entries],
+             'categories': sorted({c for c, _ in entries})}
+            for pn, entries in usage.items() if len(entries) > 1
+        ]
