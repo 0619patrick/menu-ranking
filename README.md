@@ -14,6 +14,7 @@
 - 区分堂食和外卖（KT/FP 平台）
 - 每类按金额从高到低排序
 - 下载生成的 Excel 对照表
+- 多店并排对比（按地区/品牌/月份分 sheet）
 
 ## 本地运行
 
@@ -46,29 +47,59 @@ python server.py
 
 ```
 menu-ranking/
-├── server.py               # Flask 入口
-├── requirements.txt        # Python 依赖
-├── render.yaml             # Render 部署配置
-├── Procfile                # 备用启动指令
-├── README.md
+├── server.py                  # 应用入口
+├── requirements.txt           # 生产依赖
+├── .gitignore
+├── Procfile                   # Render 启动指令
+├── render.yaml                # Render 部署配置
+├── requirements/
+│   ├── base.txt               # 生产依赖（同 requirements.txt）
+│   └── dev.txt                # 开发依赖（含 pytest）
 ├── docs/
-│   └── 菜单配置表说明.md    # 配置表格式 / 加新店流程
-└── app/
-    ├── menus/
-    │   ├── base.py         # Menu 数据结构（归类规则引擎）
-    │   ├── loader.py       # CSV 配置加载器
-    │   └── data/<餐厅>/     # 每家餐厅的配置表（menu.csv + config.csv）
-    │                       #   改菜单/加别名/加新店只需编辑 CSV，不用改代码
-    ├── pos_adapters/       # POS 平台适配器（餐飲王 / 美团 → 标准 4 列）
-    ├── processors/
-    │   └── transformer.py  # 数据处理引擎
-    └── templates/
-        └── index.html      # 上传页
+│   ├── PRD_产品需求文档.md
+│   ├── 产品说明文档.md
+│   └── 菜单配置表说明.md
+├── tests/
+│   ├── conftest.py            # pytest fixtures
+│   └── test_routes.py         # 路由测试
+├── scripts/                   # 工具脚本
+└── app/                       # 应用主包
+    ├── __init__.py             # Flask 应用工厂 create_app()
+    ├── config.py               # 配置管理（开发/生产/测试）
+    ├── routes/
+    │   └── main.py             # HTTP 路由定义
+    ├── core/
+    │   └── transformer.py      # 核心业务逻辑（数据处理引擎 + Excel 生成）
+    ├── models/
+    │   └── menu.py             # Menu 数据类（归类规则引擎）
+    ├── services/
+    │   ├── menu_service.py     # 菜单注册表（get_menu）
+    │   └── loader.py           # CSV 配置加载器
+    ├── adapters/
+    │   ├── base.py             # POS 适配器基类
+    │   ├── canyinwang.py       # 餐飲王适配器
+    │   └── meituan.py          # 美團适配器
+    ├── data/
+    │   └── menus/<餐厅>/       # 每家餐厅的配置表（menu.csv + config.csv）
+    ├── templates/
+    │   └── index.html          # 上传页面
+    └── static/                 # 静态资源（CSS/JS/图片）
 ```
 
 ## 技术栈
 
 - 后端: Python + Flask
-- Excel 处理: openpyxl + pandas
+- Excel 处理: openpyxl + pandas (calamine 引擎加速)
 - 前端: HTML + Tailwind CSS (CDN)
 - 部署: Render (免费层)
+
+## 扩展指南
+
+### 加新 POS 平台
+1. 在 `app/adapters/` 下新建 `<name>.py`，继承 `PosAdapter` 实现 `load()`
+2. 在 `app/adapters/__init__.py` 的 `ADAPTERS` 字典注册
+
+### 加新餐厅
+1. 在 `app/data/menus/` 下新建目录，目录名 = 餐厅 key
+2. 放入 `menu.csv`（菜单表）和 `config.csv`（规则配置），格式见 `docs/菜单配置表说明.md`
+3. 前端店铺配置设置 `restaurant: '<key>'`

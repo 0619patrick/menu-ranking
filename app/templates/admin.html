@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>門店管理 - 菜品銷量排行</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, "PingFang TC", "Microsoft YaHei", sans-serif; }
+  .modal-overlay { background: rgba(0,0,0,0.4); }
+  .region-header { user-select: none; }
+  .region-header:hover { background-color: #f3f4f6; }
+  .collapse-enter { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+  .collapse-open { max-height: 9999px; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<div class="max-w-5xl mx-auto px-4 py-8">
+
+  <!-- 标题栏 -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">門店管理</h1>
+      <p class="text-sm text-gray-500 mt-1">按地區分組展示 · 點擊地區標題收展</p>
+    </div>
+    <a href="/" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium transition">← 返回首頁</a>
+  </div>
+
+  <!-- 消息提示 -->
+  <div id="msg-box" class="hidden p-4 rounded-lg mb-4 text-sm font-medium"></div>
+
+  <!-- 统计概览 -->
+  <div id="stats-bar" class="flex flex-wrap gap-2 mb-4"></div>
+
+  <!-- 门店列表 -->
+  <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div class="p-4 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-base font-semibold text-gray-800">門店列表</h2>
+      <button onclick="showAddModal()"
+        class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+        ＋ 新增門店
+      </button>
+    </div>
+    <div id="stores-container" class="p-4 space-y-3">
+      <!-- 由 JS 渲染 -->
+    </div>
+  </div>
+</div>
+
+<!-- ===== 新增/编辑 Modal ===== -->
+<div id="store-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+    <h3 class="text-lg font-semibold text-gray-900 mb-4" id="modal-title">新增門店</h3>
+    <form id="store-form" class="space-y-4" onsubmit="return saveStore(event)">
+      <input type="hidden" id="store-id" value="">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">門店名稱</label>
+        <input type="text" id="store-name" required
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          placeholder="例: 香港天天銅鑼灣">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">顯示標籤</label>
+        <input type="text" id="store-label"
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          placeholder="例: 銅鑼灣（留空則使用門店名稱）">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">所屬餐廳</label>
+        <select id="store-restaurant" required
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">POS 類型</label>
+        <input type="text" id="store-pos" list="pos-list" required
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          placeholder="從下拉選擇或自行輸入">
+        <datalist id="pos-list">
+          <option value="canyinwang">餐飲王</option>
+          <option value="meituan">美團</option>
+          <option value="pos365">365</option>
+          <option value="eats365">Eats365</option>
+          <option value="keeta">Keeta</option>
+        </datalist>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">地區</label>
+        <select id="store-region-primary" onchange="onRegionPrimaryChange()"
+          class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+          <option value="香港">🇭🇰 香港</option>
+          <option value="内地">内地</option>
+          <option value="其他">其他</option>
+        </select>
+        <select id="store-region-sub" class="hidden w-full px-3 py-2 mt-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+          <option value="">— 选择细分地区 —</option>
+          <option value="华南">华南</option>
+          <option value="华东">华东</option>
+          <option value="华北">华北</option>
+          <option value="华中">华中</option>
+          <option value="西南">西南</option>
+        </select>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit"
+          class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">保存</button>
+        <button type="button" onclick="closeModal()"
+          class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">取消</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== 删除确认 Modal ===== -->
+<div id="delete-modal" class="hidden fixed inset-0 z-50 modal-overlay flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+    <h3 class="text-lg font-semibold text-gray-900 mb-2">確認刪除</h3>
+    <p class="text-sm text-gray-600 mb-4" id="delete-msg">確定要刪除此門店嗎？</p>
+    <input type="hidden" id="delete-id" value="">
+    <div class="flex gap-3">
+      <button onclick="confirmDelete()"
+        class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition">刪除</button>
+      <button onclick="document.getElementById('delete-modal').classList.add('hidden')"
+        class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let storesData = [];
+let restaurantsData = {};
+let posTypesData = {};
+
+// 门店名 → 地理区域映射
+function getStoreRegion(store) {
+  const name = store.name + store.label;
+  if (name.includes('香港') || name.includes('中環') || name.includes('圓方') ||
+      name.includes('銅鑼灣') || name.includes('太古城') || name.includes('淘大') ||
+      name.includes('東涌') || name.includes('沙田') || name.includes('K11') ||
+      name.includes('大館')) return '🇭🇰 香港';
+  if (name.includes('深圳') || name.includes('深业') || name.includes('佛山') || name.includes('海口') ||
+      name.includes('南宁') || name.includes('厦门') || name.includes('福州')) return '华南';
+  if (name.includes('上海') || name.includes('杭州') || name.includes('南京') ||
+      name.includes('宁波') || name.includes('温州')) return '华东';
+  if (name.includes('北京') || name.includes('天津')) return '华北';
+  if (name.includes('武汉') || name.includes('长沙') || name.includes('郑州') || name.includes('郑东')) return '华中';
+  if (name.includes('成都') || name.includes('重庆')) return '西南';
+  return '其他';
+}
+
+const REGION_ORDER = ['🇭🇰 香港', '华南', '华东', '华北', '华中', '西南', '其他'];
+const REGION_COLORS = {
+  '🇭🇰 香港': { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', badge: 'bg-red-100 text-red-600' },
+  '华南': { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', badge: 'bg-green-100 text-green-600' },
+  '华东': { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-600' },
+  '华北': { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-700', badge: 'bg-purple-100 text-purple-600' },
+  '华中': { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', badge: 'bg-orange-100 text-orange-600' },
+  '西南': { bg: 'bg-teal-50', border: 'border-teal-200', text: 'text-teal-700', badge: 'bg-teal-100 text-teal-600' },
+  '其他': { bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-700', badge: 'bg-gray-100 text-gray-600' },
+};
+
+let collapseState = {};
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function showMsg(text, type) {
+  const box = document.getElementById('msg-box');
+  box.className = 'p-4 rounded-lg mb-4 text-sm font-medium ' + (type === 'error' ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800');
+  box.textContent = text;
+  box.classList.remove('hidden');
+  setTimeout(() => box.classList.add('hidden'), 3000);
+}
+
+function closeModal() {
+  document.getElementById('store-modal').classList.add('hidden');
+}
+
+// ===== 加载数据 =====
+
+async function loadData() {
+  const [sRes, rRes, pRes] = await Promise.all([
+    fetch('/api/stores'),
+    fetch('/api/restaurants'),
+    fetch('/api/pos-types')
+  ]);
+  storesData = await sRes.json();
+  restaurantsData = await rRes.json();
+  posTypesData = await pRes.json();
+  renderStores();
+}
+
+function renderStores() {
+  const container = document.getElementById('stores-container');
+  if (storesData.length === 0) {
+    container.innerHTML = '<p class="text-sm text-gray-400 text-center py-8">暫無門店，點擊右上角新增</p>';
+    return;
+  }
+
+  // 按品牌分组
+  const brandGroups = {};
+  storesData.forEach(s => {
+    const bk = s.restaurant || '未分類';
+    if (!brandGroups[bk]) brandGroups[bk] = [];
+    brandGroups[bk].push(s);
+  });
+
+  // 渲染统计栏
+  renderStats(brandGroups);
+
+  // 品牌列表（品牌内按地区分组）
+  container.innerHTML = Object.keys(brandGroups).sort().map(bk => {
+    const stores = brandGroups[bk];
+    const brandName = restaurantsData[bk] || bk;
+    const isOpen = collapseState[bk] === true; // 默认收起
+
+    // 品牌内按地理区域分组
+    const regionInBrand = {};
+    stores.forEach(s => {
+      const reg = getStoreRegion(s);
+      if (!regionInBrand[reg]) regionInBrand[reg] = [];
+      regionInBrand[reg].push(s);
+    });
+
+    const regionColors = {
+      '🇭🇰 香港': 'bg-red-50 text-red-600',
+      '华南': 'bg-green-50 text-green-600',
+      '华东': 'bg-blue-50 text-blue-600',
+      '华北': 'bg-purple-50 text-purple-600',
+      '华中': 'bg-orange-50 text-orange-600',
+      '西南': 'bg-teal-50 text-teal-600',
+      '其他': 'bg-gray-50 text-gray-600',
+    };
+
+    const regionHtml = REGION_ORDER.filter(r => regionInBrand[r] && regionInBrand[r].length > 0).map(reg => {
+      const rc = regionColors[reg] || regionColors['其他'];
+      const list = regionInBrand[reg];
+      return `
+        <div class="${rc} px-3 py-1.5 text-xs font-medium border-b border-gray-100 last:border-b-0">${reg}（${list.length}）</div>
+        ${list.map(s => `
+          <div class="flex items-center justify-between gap-3 px-4 py-2 hover:bg-gray-50 transition border-b border-gray-50 last:border-b-0">
+            <div class="flex-1 min-w-0 flex items-center gap-2">
+              <span class="text-sm text-gray-900 truncate">${escHtml(s.name)}</span>
+              <span class="text-xs text-gray-400 flex-shrink-0">${escHtml(s.label)}</span>
+              <span class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded flex-shrink-0">${escHtml(posTypesData[s.pos] || s.pos)}</span>
+            </div>
+            <div class="flex gap-2 flex-shrink-0">
+              <button onclick="editStore(${s.id})"
+                class="px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded transition">編輯</button>
+              <button onclick="showDelete(${s.id},'${escHtml(s.name)}')"
+                class="px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50 rounded transition">刪除</button>
+            </div>
+          </div>
+        `).join('')}`;
+    }).join('');
+
+    return `
+      <div class="border border-gray-200 rounded-lg overflow-hidden">
+        <div class="bg-gray-100 px-4 py-2.5 flex items-center justify-between cursor-pointer select-none hover:bg-gray-200 transition"
+             onclick="toggleCollapse('${bk}')">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold text-gray-700">${escHtml(brandName)}</span>
+            <span class="text-xs text-gray-400">(${bk})</span>
+            <span class="text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded-full">${stores.length} 家</span>
+          </div>
+          <span class="text-xs text-gray-400" id="chev-${bk}">${isOpen ? '▲' : '▼'}</span>
+        </div>
+        <div id="body-${bk}" class="${isOpen ? '' : 'hidden'} divide-y divide-gray-100">
+          ${regionHtml}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderStats(brandGroups) {
+  const bar = document.getElementById('stats-bar');
+  bar.innerHTML = Object.keys(brandGroups).sort().map(bk => {
+    const name = restaurantsData[bk] || bk;
+    return `<span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">${escHtml(name)} ${brandGroups[bk].length}</span>`;
+  }).join('') + `<span class="text-xs text-gray-400 ml-1">| 共 ${storesData.length} 家</span>`;
+}
+
+function toggleCollapse(key) {
+  const body = document.getElementById('body-' + key);
+  const chev = document.getElementById('chev-' + key);
+  if (!body || !chev) return;
+  const isHidden = body.classList.contains('hidden');
+  body.classList.toggle('hidden');
+  collapseState[key] = isHidden;
+  chev.textContent = isHidden ? '▲' : '▼';
+}
+
+// ===== 新增/编辑 =====
+
+async function loadDropdowns(selectedRest, selectedPos) {
+  const restSelect = document.getElementById('store-restaurant');
+  restSelect.innerHTML = Object.entries(restaurantsData).map(([k, v]) =>
+    `<option value="${k}" ${k === selectedRest ? 'selected' : ''}>${escHtml(v)} (${k})</option>`
+  ).join('');
+  if (selectedPos) document.getElementById('store-pos').value = selectedPos;
+}
+
+function getRegionValue() {
+  const primary = document.getElementById('store-region-primary').value;
+  if (primary === '内地') {
+    const sub = document.getElementById('store-region-sub').value;
+    return sub || '内地';
+  }
+  return primary;
+}
+
+function setRegionValue(region) {
+  const subEl = document.getElementById('store-region-sub');
+  const primaryEl = document.getElementById('store-region-primary');
+  if (region === '香港' || region === '其他') {
+    primaryEl.value = region;
+    subEl.classList.add('hidden');
+    subEl.value = '';
+  } else if (['华南','华东','华北','华中','西南'].includes(region)) {
+    primaryEl.value = '内地';
+    subEl.classList.remove('hidden');
+    subEl.value = region;
+  } else {
+    // '内地' 或未知值 → 切到内地并展开二级，让用户选
+    primaryEl.value = '内地';
+    subEl.classList.remove('hidden');
+    subEl.value = '';
+  }
+}
+
+function onRegionPrimaryChange() {
+  const subEl = document.getElementById('store-region-sub');
+  const val = document.getElementById('store-region-primary').value;
+  subEl.classList.toggle('hidden', val !== '内地');
+  if (val !== '内地') subEl.value = '';
+}
+
+function showAddModal() {
+  document.getElementById('modal-title').textContent = '新增門店';
+  document.getElementById('store-id').value = '';
+  document.getElementById('store-name').value = '';
+  document.getElementById('store-label').value = '';
+  setRegionValue('香港');
+  loadDropdowns();
+  document.getElementById('store-modal').classList.remove('hidden');
+}
+
+async function editStore(id) {
+  const store = storesData.find(s => s.id === id);
+  if (!store) return;
+  document.getElementById('modal-title').textContent = '編輯門店';
+  document.getElementById('store-id').value = store.id;
+  document.getElementById('store-name').value = store.name;
+  document.getElementById('store-label').value = store.label || store.name;
+  setRegionValue(store.region || '香港');
+  await loadDropdowns(store.restaurant, store.pos);
+  document.getElementById('store-modal').classList.remove('hidden');
+}
+
+async function saveStore(e) {
+  e.preventDefault();
+  const id = document.getElementById('store-id').value;
+  const data = {
+    name: document.getElementById('store-name').value.trim(),
+    label: document.getElementById('store-label').value.trim(),
+    restaurant: document.getElementById('store-restaurant').value,
+    pos: document.getElementById('store-pos').value,
+    region: getRegionValue(),
+  };
+  const isNew = !id;
+  try {
+    const resp = await fetch(isNew ? '/api/stores' : `/api/stores/${id}`, {
+      method: isNew ? 'POST' : 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data),
+    });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.error); }
+    closeModal();
+    showMsg(isNew ? '門店新增成功' : '門店已更新', 'success');
+    await loadData();
+  } catch (err) {
+    showMsg('操作失敗: ' + err.message, 'error');
+  }
+}
+
+// ===== 删除 =====
+
+function showDelete(id, name) {
+  document.getElementById('delete-msg').textContent = `確定要刪除門店「${name}」嗎？`;
+  document.getElementById('delete-id').value = id;
+  document.getElementById('delete-modal').classList.remove('hidden');
+}
+
+async function confirmDelete() {
+  const id = document.getElementById('delete-id').value;
+  document.getElementById('delete-modal').classList.add('hidden');
+  try {
+    const resp = await fetch(`/api/stores/${id}`, { method: 'DELETE' });
+    if (!resp.ok) { const err = await resp.json(); throw new Error(err.error); }
+    showMsg('門店已刪除', 'success');
+    await loadData();
+  } catch (err) {
+    showMsg('刪除失敗: ' + err.message, 'error');
+  }
+}
+
+// ===== 启动 =====
+loadData();
+</script>
+
+</body>
+</html>

@@ -64,9 +64,23 @@
       <!-- 快速选店（顶部已选餐厅，这里直接列出该餐厅的门店，按地区分组） -->
       <div class="pb-4 border-b border-gray-100">
         <p class="text-xs text-gray-400 font-medium mb-2">快速選擇門店</p>
+        <div class="relative mb-2">
+          <input type="text" id="qs-search-input" placeholder="搜尋門店（支持模糊匹配，如：深圳 / 万象城 / K11）"
+            class="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            oninput="qsSearch()">
+          <svg class="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z"/>
+          </svg>
+        </div>
         <div id="qs-stores-panel" class="space-y-2">
           <!-- 由 JS 按当前餐厅渲染 -->
         </div>
+      </div>
+
+      <div id="memory-hint" class="hidden flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 mb-3">
+        <span class="text-sm text-blue-700">已恢复上次选择的店铺（文件需重新上传）</span>
+        <button type="button" id="clear-memory-btn"
+          class="text-xs px-3 py-1.5 bg-white border border-blue-300 text-blue-700 rounded-md hover:bg-blue-100 transition whitespace-nowrap">清除记忆，恢复默认</button>
       </div>
 
       <div id="shops-container" class="space-y-4"></div>
@@ -132,19 +146,97 @@
     </div>
   </div>
 
+  <!-- 自动拉取数据 -->
+  <div class="mt-6 bg-white rounded-xl shadow-sm p-6">
+    <details>
+      <summary class="cursor-pointer font-medium text-gray-700 hover:text-gray-900">
+        <span class="text-base font-semibold">🤖 AI 自動拉取數據</span>
+        <span class="text-xs text-gray-400 ml-2">從 POS 系統 API 自動獲取</span>
+      </summary>
+      <div class="mt-4 space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">開始日期</label>
+            <input type="date" id="fetch-start"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">結束日期</label>
+            <input type="date" id="fetch-end"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">選擇門店（從已添加的店鋪卡片中選取）</label>
+          <p class="text-xs text-gray-400">在上方「再加一家店」添加門店並上傳留空，系統將從 POS API 拉取數據</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <button id="fetch-btn" onclick="fetchAiData()"
+            class="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            拉取數據
+          </button>
+          <span id="fetch-status" class="text-sm text-gray-500"></span>
+        </div>
+        <div id="fetch-log" class="hidden space-y-1 max-h-40 overflow-y-auto text-sm"></div>
+      </div>
+    </details>
+  </div>
+
   <!-- 使用说明（与预览框等宽） -->
   <details class="mt-6 bg-white rounded-xl shadow-sm">
     <summary class="px-6 py-4 cursor-pointer font-medium text-gray-700 hover:bg-gray-50 rounded-xl">
       使用說明
     </summary>
-    <div class="px-6 pb-6 text-sm text-gray-600 space-y-2">
-      <p><strong>1. 上傳什麼?</strong> 從 POS 系統匯出的銷量明細 Excel (.xlsx)，需包含「項目名稱」「分類」「數量」「金額」等列。</p>
-      <p><strong>2. 多家店?</strong> 點「再加一家店」可以同時處理多家店的數據，每家生成一個 sheet。</p>
-      <p><strong>3. 結果?</strong> 每家店一個 sheet，左邊是按菜單分類的堂食銷量(分組內按金額降序)，右邊是 KT/FP 外賣銷量(自取分上下半段)，底部是「堂食菜單外」項目。</p>
-      <p><strong>4. 合并項?</strong> 品名欄有 ▶ 的代表有多個 POS 寫法合并計算，點擊可展開查看各寫法的銷量明細。</p>
-      <p><strong>5. 隱私?</strong> 上傳的文件僅用於即時處理，不會保存在服務器上。</p>
+    <div class="px-6 pb-6 text-sm text-gray-600 space-y-3">
+      <div>
+        <p class="font-semibold text-gray-700">① 快速選店</p>
+        <ul class="list-disc ml-5 mt-1 space-y-1">
+          <li>頂部 Tab 先選品牌（天天 / 阿城鵝肉 / 四季芬芳 / 鮨政 / 泰菜），下方自動列出該品牌門店。</li>
+          <li>門店太多時，用「搜尋門店」框模糊搜索，輸入城市或商場名（如「深圳」「K11」「杭州 万象」）直接點選。</li>
+          <li>點門店按鈕 = 加入該店；再點一次 = 移除。可一次加入多家店。</li>
+        </ul>
+      </div>
+      <div>
+        <p class="font-semibold text-gray-700">② 上傳什麼？</p>
+        <ul class="list-disc ml-5 mt-1 space-y-1">
+          <li>從 POS 系統匯出的品項銷售明細 Excel (.xlsx)。</li>
+          <li>支持美团「品項銷售明細」及「已銷售」兩種格式；系統自動識別，退菜會按淨量淨額計算。</li>
+          <li>每家店卡片上傳對應文件；文件每次都需要重新選擇（瀏覽器無法記憶文件）。</li>
+        </ul>
+      </div>
+      <div>
+        <p class="font-semibold text-gray-700">③ 上次選的店會自動記住</p>
+        <ul class="list-disc ml-5 mt-1 space-y-1">
+          <li>頁面會記住你上次選的店鋪、餐廳、地區、月份，下次打開自動恢復（藍色提示條）。</li>
+          <li>想回到默認兩家店，點提示條上的「清除記憶，恢復默認」。</li>
+        </ul>
+      </div>
+      <div>
+        <p class="font-semibold text-gray-700">④ 生成預覽 & 結果</p>
+        <ul class="list-disc ml-5 mt-1 space-y-1">
+          <li>「生成預覽」先看每道菜的數量/金額，確認無誤再下載 Excel。</li>
+          <li>沒賣出的菜（數量 0 或負數的改單殘留）不會顯示，榜單更乾淨。</li>
+          <li>品名欄有 ▶ 的代表多個 POS 寫法已合併，點擊展開可看各寫法明細；誤合併可「拆回」。</li>
+          <li>行尾 × 可刪除該行（不算進總計，下載 Excel 也會排除），誤刪可「恢復」。</li>
+          <li>預覽分區：左邊堂食按菜單分類（組內金額降序）、「堂食菜單外」= POS 有賣但菜單未列、右邊外賣平台。</li>
+        </ul>
+      </div>
+      <div>
+        <p class="font-semibold text-gray-700">⑤ 隱私</p>
+        <ul class="list-disc ml-5 mt-1 space-y-1">
+          <li>上傳的文件僅用於即時處理，不會保存在服務器上。</li>
+        </ul>
+      </div>
     </div>
   </details>
+
+  <!-- 管理入口 -->
+  <div class="mt-4 text-right">
+    <a href="/admin" class="text-sm text-gray-400 hover:text-blue-600 transition">門店管理</a>
+  </div>
 
   <footer class="text-center text-gray-400 text-xs mt-8">
     菜品銷量排行
@@ -211,13 +303,14 @@ const RESTAURANT_PRESETS = [
   // 沙田泰菜 Here Thai Market：与中環是两套独立菜单。POS 类型待定，先放餐飲王/美團两个预设供选择
   { key: 'taicai_shatian.canyinwang', label: '沙田泰菜（餐飲王）',   rest: 'taicai_shatian', pos: 'canyinwang' },
   { key: 'taicai_shatian.meituan',    label: '沙田泰菜（美團）',     rest: 'taicai_shatian', pos: 'meituan'    },
+  { key: 'yizheng.meituan',           label: '鮨政（美團）',         rest: 'yizheng',        pos: 'meituan'    },
 ];
 
 function createShopCard(idx, defaultName, restaurant, pos, region = '香港', month = null) {
   if (month == null) month = new Date().getMonth() + 1;  // 默认当前月
   const monthOpts = Array.from({length: 12}, (_, i) =>
     `<option value="${i+1}" ${i+1 === month ? 'selected' : ''}>${i+1}月</option>`).join('');
-  const regionOpts = ['香港','内地'].map(r =>
+  const regionOpts = ['香港','内地','华南','华东','华北','华中','西南'].map(r =>
     `<option value="${r}" ${r === region ? 'selected' : ''}>${r}</option>`).join('');
   const restOpts = RESTAURANT_PRESETS.map(p => {
     const sel = (p.rest === restaurant && p.pos === pos) ? 'selected' : '';
@@ -277,6 +370,56 @@ function addShop(defaultName = '', restaurant = 'tiantian', pos = 'canyinwang', 
   shopCount++;
   attachShopEvents();
   updateRemoveButtons();
+}
+
+// ===== 店铺记忆（记住上次选择的店） =====
+const SHOP_MEMORY_KEY = 'yizheng_shop_memory_v1';
+
+function saveShopMemory() {
+  const cards = [];
+  document.querySelectorAll('.shop-card').forEach(card => {
+    const idx = card.dataset.idx;
+    const name = card.querySelector(`input[name="shop_name_${idx}"]`);
+    const rest = card.querySelector(`input[name="shop_restaurant_${idx}"]`);
+    const pos  = card.querySelector(`input[name="shop_pos_${idx}"]`);
+    const region = card.querySelector(`select[name="shop_region_${idx}"]`);
+    const month  = card.querySelector(`select[name="shop_month_${idx}"]`);
+    if (name && name.value.trim()) {
+      cards.push({
+        name: name.value.trim(),
+        rest: rest ? rest.value : 'tiantian',
+        pos:  pos  ? pos.value  : 'canyinwang',
+        region: region ? region.value : '香港',
+        month: month  ? parseInt(month.value, 10) : new Date().getMonth() + 1,
+      });
+    }
+  });
+  try {
+    localStorage.setItem(SHOP_MEMORY_KEY, JSON.stringify(cards));
+  } catch (e) { /* localStorage 不可用时静默 */ }
+  return cards;
+}
+
+function loadShopMemory() {
+  try {
+    const raw = localStorage.getItem(SHOP_MEMORY_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data.filter(c => c && c.name) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearShopMemory() {
+  try {
+    localStorage.removeItem(SHOP_MEMORY_KEY);
+  } catch (e) { /* 忽略 */ }
+}
+
+function showMemoryHint() {
+  const el = document.getElementById('memory-hint');
+  if (el) el.classList.remove('hidden');
 }
 
 function attachShopEvents() {
@@ -353,59 +496,53 @@ document.getElementById('add-shop-btn').onclick = () => {
 const POS_DISPLAY = {
   'canyinwang': '餐飲王',
   'pos365':    '365',
+  'eats365':   'Eats365',
   'meituan':   '美團',
   'keeta':     'Keeta',
 };
 
-// 每个餐厅的门店列表（按地区分组）
+// 门店名 → 地理区域（前端自动归类，不依赖后端 region 字段）
+function getStoreRegion(name, label) {
+  const s = (name || '') + (label || '');
+  if (s.includes('香港') || s.includes('中環') || s.includes('圓方') ||
+      s.includes('銅鑼灣') || s.includes('太古城') || s.includes('淘大') ||
+      s.includes('東涌') || s.includes('沙田') || s.includes('K11') ||
+      s.includes('大館')) return '🇭🇰 香港';
+  if (s.includes('深圳') || s.includes('深业') || s.includes('佛山') || s.includes('海口') ||
+      s.includes('南宁') || s.includes('厦门') || s.includes('福州')) return '华南';
+  if (s.includes('上海') || s.includes('杭州') || s.includes('南京') ||
+      s.includes('宁波') || s.includes('温州')) return '华东';
+  if (s.includes('北京') || s.includes('天津')) return '华北';
+  if (s.includes('武汉') || s.includes('长沙') || s.includes('郑州') || s.includes('郑东')) return '华中';
+  if (s.includes('成都') || s.includes('重庆')) return '西南';
+  return '内地';
+}
+
+const GEO_REGION_ORDER = ['🇭🇰 香港', '华南', '华东', '华北', '华中', '西南', '内地'];
+
+// 每个餐厅的门店列表（按地区分组），从 API 加载
 // 没有门店的餐厅留空对象, 顶部 tab 会显示"暫無門店"
-const QS_STORES_BY_RESTAURANT = {
-  'tiantian': {
-    '香港': [
-      { label: '銅鑼灣', name: '香港天天銅鑼灣', pos: 'meituan'    },
-      { label: '圓方',   name: '香港天天圓方',   pos: 'meituan'    },
-      { label: '沙田',   name: '香港天天沙田',   pos: 'canyinwang' },
-      { label: '太古城', name: '香港天天太古城', pos: 'canyinwang' },
-    ],
-    '内地': [
-      // 内地店用 tiantian_cn 菜单（人民币、新加坡融合菜），POS 同样美團
-      { label: '海口天天', name: '海口天天', pos: 'meituan', rest: 'tiantian_cn' },
-      { label: '南京天天', name: '南京天天', pos: 'meituan', rest: 'tiantian_cn' },
-      { label: '上海天天', name: '上海天天', pos: 'meituan', rest: 'tiantian_cn' },
-    ],
-  },
-  'acheng': {           // 阿城鵝肉
-    '香港': [
-      // 淘大/太古：通用17类（共用 acheng）。太古 +10% 服務費（不影响菜单，服務費行已在 drop 规则丢弃）
-      { label: '淘大', name: '香港阿城淘大', pos: 'canyinwang' },
-      { label: '太古', name: '香港阿城太古', pos: 'canyinwang' },
-      // 東涌(東薈城)：18类 = 通用17类 + 手作系列(刨冰)，用 acheng_donghui（继承 acheng）
-      { label: '東涌', name: '香港阿城東涌', pos: 'canyinwang', rest: 'acheng_donghui' },
-    ],
-    '内地': [
-      // 深圳店用 acheng_cn 菜单（简体, 卤味分3档+手作独立）, POS 美團
-      { label: '深圳阿城', name: '深圳阿城', pos: 'meituan', rest: 'acheng_cn' },
-    ],
-  },
-  'sijifenfang': {     // 四季芬芳
-    '香港': [
-      { label: '沙田', name: '香港四季芬芳沙田', pos: 'canyinwang' },
-    ],
-  },
-  'yizheng':      {},   // 鮨政
-  'taicai': {           // 泰菜
-    '香港': [
-      { label: '中環', name: '香港泰菜中環', pos: 'canyinwang' },
-      // 沙田泰菜走自己的菜单 taicai_shatian；POS 待定，先默认餐飲王，确定后可在「餐廳」下拉改美團
-      { label: '沙田', name: '香港泰菜沙田', rest: 'taicai_shatian', pos: 'canyinwang' },
-    ],
-  },
-};
+let QS_STORES_BY_RESTAURANT = {};
+
+async function loadStores() {
+  try {
+    const resp = await fetch('/api/stores/grouped');
+    QS_STORES_BY_RESTAURANT = await resp.json();
+  } catch (e) {
+    console.error('加载门店失败，使用空数据', e);
+    QS_STORES_BY_RESTAURANT = {};
+  }
+  qsRender();
+}
 
 let currentRestaurant = 'tiantian';
 
 function setRestaurant(key) {
   currentRestaurant = key;
+  // 切换餐厅时清空搜索框
+  const qsInput = document.getElementById('qs-search-input');
+  if (qsInput) qsInput.value = '';
+  qsSearchQuery = '';
   // 顶部 tab 按钮样式: 大、加粗、active 上下渐变
   document.querySelectorAll('.rest-tab-btn').forEach(btn => {
     const isActive = btn.dataset.rest === key;
@@ -443,38 +580,247 @@ function qsIsSelected(shopName) {
   return found;
 }
 
+// 折叠状态（默认收起）
+let geoCollapseState = {};
+
+// 模糊搜索关键词（空 = 不搜索）
+let qsSearchQuery = '';
+
+function qsSearch() {
+  const input = document.getElementById('qs-search-input');
+  qsSearchQuery = (input ? input.value : '').trim().toLowerCase();
+  qsRender();
+}
+
+function qsMatch(s) {
+  if (!qsSearchQuery) return true;
+  const hay = ((s.label || '') + ' ' + (s.name || '') + ' ' + (s.pos || '')).toLowerCase();
+  return qsSearchQuery.split(/\s+/).every(kw => hay.includes(kw));
+}
+
 function qsRender() {
   const panel = document.getElementById('qs-stores-panel');
   const groups = QS_STORES_BY_RESTAURANT[currentRestaurant] || {};
-  const regions = Object.keys(groups).filter(r => groups[r] && groups[r].length > 0);
+  const dbRegions = Object.keys(groups).filter(r => groups[r] && groups[r].length > 0);
 
-  if (regions.length === 0) {
+  if (dbRegions.length === 0) {
     panel.innerHTML = '<p class="text-xs text-gray-400 py-1">暫無門店（菜單/POS 配置尚未補充）</p>';
     return;
   }
 
-  panel.innerHTML = regions.map(region => {
-    const btns = groups[region].map(s => {
-      const selected = qsIsSelected(s.name);
-      const cls = selected
-        ? 'px-3 py-1.5 text-sm rounded-full border border-blue-500 bg-blue-600 text-white transition'
-        : 'px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition';
-      const posSuffix = s.pos && POS_DISPLAY[s.pos] ? `（${POS_DISPLAY[s.pos]}）` : '';
-      const display = s.label + posSuffix;
-      const p = s.pos || '';
-      const r = s.rest || currentRestaurant;   // 单店可覆盖菜单（如内地天天用 tiantian_cn）
-      return `<button type="button" onclick="qsToggleStore('${s.name}','${r}','${p}','${region}')" class="${cls}">${display}</button>`;
+  // 扁平化所有门店，按地理区域重新分组
+  const geoGroups = {};
+  dbRegions.forEach(dbReg => {
+    groups[dbReg].forEach(s => {
+      const geo = getStoreRegion(s.name, s.label);
+      if (!geoGroups[geo]) geoGroups[geo] = [];
+      geoGroups[geo].push({ ...s, _dbRegion: dbReg });
+    });
+  });
+
+  // 应用搜索过滤
+  const searching = qsSearchQuery.length > 0;
+  if (searching) {
+    Object.keys(geoGroups).forEach(geo => {
+      geoGroups[geo] = geoGroups[geo].filter(s => qsMatch(s));
+    });
+  }
+
+  // 一级：香港 / 内地
+  const hkGeo = '🇭🇰 香港';
+  const hkStores = geoGroups[hkGeo] || [];
+  const subRegions = GEO_REGION_ORDER.filter(g => g !== hkGeo && geoGroups[g] && geoGroups[g].length > 0);
+
+  const totalMatched = hkStores.length + subRegions.reduce((n, g) => n + geoGroups[g].length, 0);
+  if (totalMatched === 0) {
+    panel.innerHTML = `<p class="text-xs text-gray-400 py-1">沒有找到匹配「${qsSearchQuery}」的門店</p>`;
+    return;
+  }
+
+  panel.innerHTML = '';
+
+  // ── 香港（一级，直接展示门店按钮） ──
+  if (hkStores.length > 0) {
+    const key = 'geo_hk';
+    const open = searching ? true : (geoCollapseState[key] === true);
+    panel.innerHTML += `
+      <div class="border border-gray-200 rounded-lg overflow-hidden">
+        <div class="bg-gray-100 px-4 py-2.5 flex items-center justify-between cursor-pointer select-none hover:bg-gray-200 transition"
+             onclick="toggleGeo('${key}')">
+          <span class="text-sm font-semibold text-gray-700">${hkGeo}</span>
+          <span class="text-xs text-gray-400" id="chev-${key}">${open ? '▲' : '▼'}</span>
+        </div>
+        <div id="body-${key}" class="${open ? '' : 'hidden'} flex gap-2 flex-wrap px-4 py-3">
+          ${hkStores.map(s => buildStoreBtn(s)).join('')}
+        </div>
+      </div>`;
+  }
+
+  // ── 内地（一级标题，内嵌二级区域） ──
+  if (subRegions.length > 0) {
+    const mainKey = 'geo_main';
+    const mainOpen = searching ? true : (geoCollapseState[mainKey] === true);
+    const subHtml = subRegions.map(sub => {
+      const subKey = 'geo_' + sub;
+      const subOpen = searching ? true : (geoCollapseState[subKey] === true);
+      return `
+        <div>
+          <div class="flex items-center justify-between cursor-pointer select-none px-3 py-1.5 hover:bg-gray-50 transition"
+               onclick="toggleGeo('${subKey}')">
+            <span class="text-xs font-medium text-gray-500">${sub}（${geoGroups[sub].length}）</span>
+            <span class="text-xs text-gray-400" id="chev-${subKey}">${subOpen ? '▲' : '▼'}</span>
+          </div>
+          <div id="body-${subKey}" class="${subOpen ? '' : 'hidden'} flex gap-2 flex-wrap px-3 py-2">
+            ${geoGroups[sub].map(s => buildStoreBtn(s)).join('')}
+          </div>
+        </div>`;
     }).join('');
-    return `<div class="flex gap-2 items-center flex-wrap">
-      <span class="text-sm text-gray-500 font-medium w-10 flex-shrink-0">${region}:</span>
-      ${btns}
-    </div>`;
-  }).join('');
+
+    panel.innerHTML += `
+      <div class="border border-gray-200 rounded-lg overflow-hidden mt-3">
+        <div class="bg-gray-100 px-4 py-2.5 flex items-center justify-between cursor-pointer select-none hover:bg-gray-200 transition"
+             onclick="toggleGeo('${mainKey}')">
+          <span class="text-sm font-semibold text-gray-700">内地</span>
+          <span class="text-xs text-gray-400" id="chev-${mainKey}">${mainOpen ? '▲' : '▼'}</span>
+        </div>
+        <div id="body-${mainKey}" class="${mainOpen ? '' : 'hidden'} divide-y divide-gray-100">
+          ${subHtml}
+        </div>
+      </div>`;
+  }
 }
 
-addShop('香港天天太古城', 'tiantian', 'canyinwang', '香港');
-addShop('香港天天沙田',   'tiantian', 'canyinwang', '香港');
-setRestaurant('tiantian');   // 初始化顶部 tab + 渲染门店面板
+function buildStoreBtn(s) {
+  const selected = qsIsSelected(s.name);
+  const cls = selected
+    ? 'px-3 py-1.5 text-sm rounded-full border border-blue-500 bg-blue-600 text-white transition'
+    : 'px-3 py-1.5 text-sm rounded-full border border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 transition';
+  const posSuffix = s.pos && POS_DISPLAY[s.pos] ? `（${POS_DISPLAY[s.pos]}）` : '';
+  const display = s.label + posSuffix;
+  const p = s.pos || '';
+  const r = s.rest || currentRestaurant;
+  const dbReg = s._dbRegion || '香港';
+  return `<button type="button" onclick="qsToggleStore('${s.name}','${r}','${p}','${dbReg}')" class="${cls}">${display}</button>`;
+}
+
+function toggleGeo(key) {
+  const body = document.getElementById('body-' + key);
+  const chev = document.getElementById('chev-' + key);
+  if (!body || !chev) return;
+  const isHidden = body.classList.contains('hidden');
+  body.classList.toggle('hidden');
+  geoCollapseState[key] = isHidden;
+  chev.textContent = isHidden ? '▲' : '▼';
+}
+
+// 等待门店数据加载完成后初始化
+loadStores().then(() => {
+  const saved = loadShopMemory();
+  if (saved && saved.length > 0) {
+    // 恢复上次选择的店铺卡片（文件无法持久化，需重新选择）
+    saved.forEach(c => addShop(c.name, c.rest, c.pos, c.region, c.month));
+    setRestaurant(saved[0].rest || 'tiantian');
+    if (saved.length > 0) showMemoryHint();
+  } else {
+    addShop('香港天天太古城', 'tiantian', 'canyinwang', '香港');
+    addShop('香港天天沙田',   'tiantian', 'canyinwang', '香港');
+    setRestaurant('tiantian');
+  }
+});
+
+// 清除记忆按钮
+document.getElementById('clear-memory-btn').onclick = function () {
+  clearShopMemory();
+  document.getElementById('memory-hint').classList.add('hidden');
+  // 清空现有店铺卡片，恢复默认
+  document.getElementById('shops-container').innerHTML = '';
+  shopCount = 0;
+  addShop('香港天天太古城', 'tiantian', 'canyinwang', '香港');
+  addShop('香港天天沙田',   'tiantian', 'canyinwang', '香港');
+  setRestaurant('tiantian');
+};
+
+// ===== AI 数据拉取 =====
+
+async function fetchAiData() {
+  const btn = document.getElementById('fetch-btn');
+  const statusEl = document.getElementById('fetch-status');
+  const logEl = document.getElementById('fetch-log');
+
+  // 收集当前已添加的店铺卡片
+  const cards = document.querySelectorAll('.shop-card');
+  if (cards.length === 0) {
+    statusEl.textContent = '請先在上方添加門店';
+    return;
+  }
+
+  const startDate = document.getElementById('fetch-start').value;
+  const endDate = document.getElementById('fetch-end').value;
+  if (!startDate || !endDate) {
+    statusEl.textContent = '請選擇開始和結束日期';
+    return;
+  }
+
+  const stores = [];
+  cards.forEach(card => {
+    const idx = card.dataset.idx;
+    const name = card.querySelector(`input[name="shop_name_${idx}"]`);
+    const rest = card.querySelector(`input[name="shop_restaurant_${idx}"]`);
+    const pos = card.querySelector(`input[name="shop_pos_${idx}"]`);
+    if (name && name.value) {
+      stores.push({
+        name: name.value,
+        pos_type: pos ? pos.value : 'canyinwang',
+        restaurant: rest ? rest.value : 'tiantian',
+      });
+    }
+  });
+
+  btn.disabled = true;
+  statusEl.textContent = '正在拉取數據...';
+  logEl.classList.remove('hidden');
+  logEl.innerHTML = '<div class="text-gray-500">⏳ 正在請求...</div>';
+
+  try {
+    const resp = await fetch('/api/fetch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ stores, start_date: startDate, end_date: endDate }),
+    });
+    const result = await resp.json();
+
+    if (!resp.ok) {
+      statusEl.textContent = '請求失敗';
+      logEl.innerHTML = `<div class="text-red-600">❌ ${result.error || '請求失敗'}</div>`;
+      return;
+    }
+
+    // 显示结果
+    let logHtml = '';
+    if (result.results && result.results.length > 0) {
+      logHtml += `<div class="text-green-600">✅ 成功拉取 ${result.results.length} 家店</div>`;
+      // 渲染预览
+      renderPreview(result.results);
+      document.getElementById('preview-section').classList.remove('hidden');
+      document.getElementById('preview-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    if (result.errors && result.errors.length > 0) {
+      result.errors.forEach(e => {
+        logHtml += `<div class="text-red-500">⚠️ ${escHtml(e.shop)}: ${escHtml(e.error)}</div>`;
+      });
+    }
+    if (!result.results || result.results.length === 0) {
+      logHtml += '<div class="text-gray-500">沒有拉取到數據</div>';
+    }
+    logEl.innerHTML = logHtml;
+    statusEl.textContent = result.status === 'ok' ? '✅ 完成' : (result.status === 'partial' ? '⚠️ 部分完成' : '❌ 失敗');
+  } catch (err) {
+    statusEl.textContent = '❌ 請求失敗';
+    logEl.innerHTML = `<div class="text-red-600">❌ ${escHtml(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 // ===== FormData 构建 =====
 
@@ -520,6 +866,8 @@ function buildFormData() {
       count++;
     }
   });
+  // 记住上次选择的店铺（文件无法持久化，需重新上传）
+  saveShopMemory();
   formData.set('shop_count', count);
   return formData;
 }
@@ -693,8 +1041,17 @@ function switchTab(idx) {
 
 function renderShopPreview(shopData, shopIdx) {
   mergePrefix = shopIdx || 0;   // ▶ id 用这家店的索引做前缀，避免跨店撞 id
+  const warnings = (shopData.warnings || []).map(w => `
+    <div class="bg-amber-50 border border-amber-300 text-amber-900 px-3 py-2 mb-3 rounded text-xs">
+      <span class="font-semibold">⚠️ 配置警告:</span>
+      POS 寫法「${escHtml(w.pos_name)}」(${w.qty} 份) 同時被
+      ${w.dishes.map(d => `「${escHtml(d)}」`).join('、')}
+      引用，該寫法的銷量/金額會被重複計算。
+      <a href="/admin" target="_blank" class="underline text-amber-700 hover:text-amber-900">去菜單配置檢查</a>
+    </div>`).join('');
   return `
     <div class="overflow-x-auto">
+      ${warnings}
       <div class="grid grid-cols-[1fr_4px_1fr] gap-3 pb-2 min-w-[920px]">
         ${renderDineinTable(shopData)}
         <div class="bg-gray-200 rounded"></div>
@@ -988,6 +1345,103 @@ function toggleMerge(btn, id) {
   if (isHidden) openMerges.add(id); else openMerges.delete(id);  // 记住展开状态，重渲染后不收起
 }
 
+
+// ===== AI 辅助匹配 =====
+
+function getRestaurantKey(shopName) {
+  const cards = document.querySelectorAll('.shop-card');
+  for (const card of cards) {
+    const idx = card.dataset.idx;
+    const nameInput = card.querySelector('input[name="shop_name_' + idx + '"]');
+    const restInput = card.querySelector('input[name="shop_restaurant_' + idx + '"]');
+    if (nameInput && nameInput.value === shopName && restInput) {
+      return restInput.value;
+    }
+  }
+  return currentRestaurant;
+}
+
+function showMatchSuggestions(shopName, itemName) {
+  const restKey = getRestaurantKey(shopName);
+  fetch('/api/match-suggestions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ restaurant: restKey, unmatched: [itemName] }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    const suggestions = (data.suggestions && data.suggestions[itemName]) || [];
+    renderMatchModal(shopName, restKey, itemName, suggestions);
+  })
+  .catch(err => alert('匹配请求失败: ' + err.message));
+}
+
+function renderMatchModal(shopName, restKey, itemName, suggestions) {
+  const existing = document.getElementById('match-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'match-modal';
+  modal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4';
+  modal.style.background = 'rgba(0,0,0,0.4)';
+
+  let html = '<div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto">';
+  html += '<h3 class="text-lg font-semibold text-gray-900 mb-2">🤖 AI 匹配建议</h3>';
+  html += '<p class="text-sm text-gray-500 mb-1">门店: ' + escHtml(shopName) + '</p>';
+  html += '<p class="text-sm text-gray-600 mb-4">POS 菜名: <code class="bg-gray-100 px-1 rounded">' + escHtml(itemName) + '</code></p>';
+
+  if (suggestions.length === 0) {
+    html += '<p class="text-sm text-amber-600 bg-amber-50 p-3 rounded">⚠️ 未找到相似度超过 30% 的匹配项，请手动在 menu.csv 中配置</p>';
+  } else {
+    html += '<div class="space-y-2 mb-4">';
+    suggestions.forEach((s, i) => {
+      const pct = Math.round(s.score * 100);
+      const color = pct >= 80 ? 'text-green-600' : (pct >= 50 ? 'text-amber-600' : 'text-gray-500');
+      html += `<div class="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer" onclick="confirmMatch('${jsAttr(shopName)}','${jsAttr(restKey)}','${jsAttr(s.menu_name)}','${jsAttr(itemName)}')">`;
+      html += '  <div class="flex items-center justify-between">';
+      html += '    <div><span class="font-medium text-gray-900">' + escHtml(s.menu_name) + '</span>';
+      html += '      <span class="text-xs text-gray-400 ml-2">(' + escHtml(s.cat) + ')</span></div>';
+      html += '    <span class="text-sm font-bold ' + color + '">' + pct + '%</span>';
+      html += '  </div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<div class="flex gap-3 pt-2">';
+  html += `  <button onclick="document.getElementById('match-modal').remove()" class="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">關閉</button>`;
+  html += '</div></div>';
+  modal.innerHTML = html;
+  document.body.appendChild(modal);
+}
+
+async function confirmMatch(shopName, restKey, menuName, posWriting) {
+  try {
+    const resp = await fetch('/api/confirm-match', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ restaurant: restKey, menu_name: menuName, pos_writing: posWriting }),
+    });
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || '保存失败');
+
+    // 关闭弹窗
+    const modal = document.getElementById('match-modal');
+    if (modal) modal.remove();
+
+    // 显示成功消息
+    const msg = result.updated ? '✅ 已匹配并保存到菜单' : '✅ POS 写法已存在';
+    const el = document.createElement('div');
+    el.className = 'fixed top-4 right-4 z-50 bg-green-50 text-green-800 px-4 py-2 rounded-lg shadow text-sm';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+
+    // 重新加载预览
+    await fetchPreview();
+  } catch (err) {
+    alert('保存失败: ' + err.message);
+  }
+}
 </script>
 
 </body>
