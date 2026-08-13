@@ -361,7 +361,7 @@ def build_delivery(src, menu: Menu):
         def build_section_group(rows):
             by_cat = {}
             for cat, pn, q, a in rows:
-                if q == 0 and a == 0:
+                if q <= 0:
                     continue
                 by_cat.setdefault(cat, []).append((pn, q, a))
             sections = []
@@ -491,7 +491,7 @@ def build_sheet(ws, shop_name, src, menu: Menu):
         tea_cat, tea_items = items_patched[0]
         for idx, (name, price, unit, pos_names) in enumerate(tea_items):
             q, a = get_dinein_sales(pos_names, by_name)
-            if q == 0 and a == 0:
+            if q <= 0:
                 continue
             write_dinein_row(current_row_dinein,
                              [tea_cat, idx+1, name, price, q, a],
@@ -519,18 +519,18 @@ def build_sheet(ws, shop_name, src, menu: Menu):
         for name, price, unit, pos_names in items:
             if is_addon:
                 paid_q, paid_a, free_q = get_addon_split(pos_names, addon_lookup)
-                if paid_q == 0 and paid_a == 0 and free_q == 0:
+                if paid_q <= 0 and free_q == 0:
                     continue
                 disp_name = f'{name}〔套餐內含 {free_q}次〕' if free_q > 0 else name
                 items_with_sales.append((disp_name, price, unit, paid_q, paid_a))
             else:
                 q, a = get_dinein_sales(pos_names, by_name)
-                if q == 0 and a == 0:
+                if q <= 0:
                     continue
                 items_with_sales.append((name, price, unit, q, a))
         if not is_addon:
             for n, q, a, _cats, _parts in merge_new_items(new_in_section.get(cat, [])):
-                if q == 0 and a == 0:
+                if q <= 0:
                     continue
                 items_with_sales.append((n, '', '', q, a))
         items_with_sales.sort(key=lambda x: -x[4])
@@ -562,6 +562,8 @@ def build_sheet(ws, shop_name, src, menu: Menu):
             items = extras[src_cat]
             start = current_row_dinein
             for idx, (name, q, a, _m) in enumerate(items):
+                if q <= 0:
+                    continue
                 cat_val = src_cat if idx == 0 else ''
                 write_dinein_row(current_row_dinein,
                                  [cat_val, idx+1, name, '', q, a],
@@ -647,7 +649,7 @@ def build_preview_data(shop_name, src, menu: Menu):
         tea_cat, tea_items_raw = items_patched[0]
         for name, price, unit, pos_names in tea_items_raw:
             q, a, variants = get_dinein_sales_detail(pos_names, by_name)
-            if q == 0 and a == 0:
+            if q <= 0:
                 continue
             tea_rows.append({'name': name, 'price': price, 'unit': unit,
                              'qty': q, 'amt': a,
@@ -665,8 +667,8 @@ def build_preview_data(shop_name, src, menu: Menu):
         if menu.addon_section and cat == menu.addon_section:
             for name, price, unit, pos_names in items_raw:
                 paid_q, paid_a, free_q = get_addon_split(pos_names, addon_lookup)
-                # 免费次数>0 也展示（套餐内含信息），全 0 则隐藏
-                if paid_q == 0 and paid_a == 0 and free_q == 0:
+                # 免费次数>0 也展示（套餐内含信息），数量<=0 则隐藏（含负数改单残留）
+                if paid_q <= 0 and free_q == 0:
                     continue
                 rows.append({'name': name, 'price': price, 'unit': unit,
                              'qty': paid_q, 'amt': paid_a,
@@ -675,14 +677,14 @@ def build_preview_data(shop_name, src, menu: Menu):
         else:
             for name, price, unit, pos_names in items_raw:
                 q, a, variants = get_dinein_sales_detail(pos_names, by_name)
-                if q == 0 and a == 0:
+                if q <= 0:
                     continue
                 rows.append({'name': name, 'price': price, 'unit': unit,
                              'qty': q, 'amt': a,
                              'merged': _audit_merged(pos_names, by_name, variants, name)})
             is_pos_native = cat in menu.pos_native_sections
             for n, q, a, pos_cats, parts in merge_new_items(new_in_section.get(cat, [])):
-                if q == 0 and a == 0:
+                if q <= 0:
                     continue
                 row = {'name': n, 'price': '', 'unit': '',
                        'qty': q, 'amt': a,
@@ -698,7 +700,7 @@ def build_preview_data(shop_name, src, menu: Menu):
     extras_sections = [
         {'cat': c, 'items': [
             {'name': menu.pos_aliases.get(n, n), 'qty': q, 'amt': a, 'merged': m}
-            for n, q, a, m in extras[c]
+            for n, q, a, m in extras[c] if q > 0
         ]}
         for c in _sort_extras_cats(extras)
     ]
@@ -762,7 +764,7 @@ def build_shop_block_data(shop_name, src, menu: Menu):
         rows = []
         for name, _p, _u, pos_names in tea_items:
             q, a = get_dinein_sales(pos_names, by_name)
-            if q == 0 and a == 0:
+            if q <= 0:
                 continue
             rows.append({'name': name, 'qty': q, 'amt': a})
         if rows:
@@ -779,18 +781,20 @@ def build_shop_block_data(shop_name, src, menu: Menu):
         for name, _p, _u, pos_names in items_raw:
             if is_addon:
                 paid_q, paid_a, free_q = get_addon_split(pos_names, addon_lookup)
-                if paid_q == 0 and paid_a == 0 and free_q == 0:
+                if paid_q <= 0 and free_q == 0:
                     continue
                 disp = f'{name}〔套餐內含 {free_q}次〕' if free_q > 0 else name
                 rows.append({'name': disp, 'qty': paid_q, 'amt': paid_a})
             else:
                 q, a = get_dinein_sales(pos_names, by_name)
-                if q == 0 and a == 0:
+                if q <= 0:
                     continue
                 rows.append({'name': name, 'qty': q, 'amt': a})
         if not is_addon:
             is_pos_native = cat in menu.pos_native_sections
             for n, q, a, _cats, _parts in merge_new_items(new_in_section.get(cat, [])):
+                if q <= 0:
+                    continue
                 if is_pos_native:
                     rows.append({'name': n, 'qty': q, 'amt': a})
                 else:
@@ -802,7 +806,7 @@ def build_shop_block_data(shop_name, src, menu: Menu):
 
     for src_cat in _sort_extras_cats(extras):
         rows = [{'name': menu.pos_aliases.get(n, n), 'qty': q, 'amt': a}
-                for n, q, a, _m in extras[src_cat]]
+                for n, q, a, _m in extras[src_cat] if q > 0]
         if rows:
             blocks.append({'cat': src_cat, 'kind': 'extra', 'rows': rows})
 
