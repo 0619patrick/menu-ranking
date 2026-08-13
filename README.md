@@ -58,7 +58,8 @@ menu-ranking/
 ├── docs/
 │   ├── PRD_产品需求文档.md
 │   ├── 产品说明文档.md
-│   └── 菜单配置表说明.md
+│   ├── 菜单配置表说明.md
+│   └── 对账校验说明.md        # 输出 vs 源数据差额排查指南
 ├── tests/
 │   ├── conftest.py            # pytest fixtures
 │   └── test_routes.py         # 路由测试
