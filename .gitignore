@@ -32,3 +32,12 @@ Thumbs.db
 
 # Logs
 logs/
+
+# 本地回滚备份（不推送到仓库）
+app/data/stores.db.bak_*
+
+# 调试探针脚本（遗留）
+scripts/meituan_browser_state_probe.mjs
+
+# 美团导出中间产物工作区（仅仓库根目录）
+/data/
