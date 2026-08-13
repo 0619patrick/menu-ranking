@@ -64,6 +64,14 @@
       <!-- 快速选店（顶部已选餐厅，这里直接列出该餐厅的门店，按地区分组） -->
       <div class="pb-4 border-b border-gray-100">
         <p class="text-xs text-gray-400 font-medium mb-2">快速選擇門店</p>
+        <div class="relative mb-2">
+          <input type="text" id="qs-search-input" placeholder="搜尋門店（支持模糊匹配，如：深圳 / 万象城 / K11）"
+            class="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            oninput="qsSearch()">
+          <svg class="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z"/>
+          </svg>
+        </div>
         <div id="qs-stores-panel" class="space-y-2">
           <!-- 由 JS 按当前餐厅渲染 -->
         </div>
@@ -497,6 +505,10 @@ let currentRestaurant = 'tiantian';
 
 function setRestaurant(key) {
   currentRestaurant = key;
+  // 切换餐厅时清空搜索框
+  const qsInput = document.getElementById('qs-search-input');
+  if (qsInput) qsInput.value = '';
+  qsSearchQuery = '';
   // 顶部 tab 按钮样式: 大、加粗、active 上下渐变
   document.querySelectorAll('.rest-tab-btn').forEach(btn => {
     const isActive = btn.dataset.rest === key;
@@ -537,6 +549,21 @@ function qsIsSelected(shopName) {
 // 折叠状态（默认收起）
 let geoCollapseState = {};
 
+// 模糊搜索关键词（空 = 不搜索）
+let qsSearchQuery = '';
+
+function qsSearch() {
+  const input = document.getElementById('qs-search-input');
+  qsSearchQuery = (input ? input.value : '').trim().toLowerCase();
+  qsRender();
+}
+
+function qsMatch(s) {
+  if (!qsSearchQuery) return true;
+  const hay = ((s.label || '') + ' ' + (s.name || '') + ' ' + (s.pos || '')).toLowerCase();
+  return qsSearchQuery.split(/\s+/).every(kw => hay.includes(kw));
+}
+
 function qsRender() {
   const panel = document.getElementById('qs-stores-panel');
   const groups = QS_STORES_BY_RESTAURANT[currentRestaurant] || {};
@@ -557,17 +584,31 @@ function qsRender() {
     });
   });
 
+  // 应用搜索过滤
+  const searching = qsSearchQuery.length > 0;
+  if (searching) {
+    Object.keys(geoGroups).forEach(geo => {
+      geoGroups[geo] = geoGroups[geo].filter(s => qsMatch(s));
+    });
+  }
+
   // 一级：香港 / 内地
   const hkGeo = '🇭🇰 香港';
   const hkStores = geoGroups[hkGeo] || [];
   const subRegions = GEO_REGION_ORDER.filter(g => g !== hkGeo && geoGroups[g] && geoGroups[g].length > 0);
+
+  const totalMatched = hkStores.length + subRegions.reduce((n, g) => n + geoGroups[g].length, 0);
+  if (totalMatched === 0) {
+    panel.innerHTML = `<p class="text-xs text-gray-400 py-1">沒有找到匹配「${qsSearchQuery}」的門店</p>`;
+    return;
+  }
 
   panel.innerHTML = '';
 
   // ── 香港（一级，直接展示门店按钮） ──
   if (hkStores.length > 0) {
     const key = 'geo_hk';
-    const open = geoCollapseState[key] === true;
+    const open = searching ? true : (geoCollapseState[key] === true);
     panel.innerHTML += `
       <div class="border border-gray-200 rounded-lg overflow-hidden">
         <div class="bg-gray-100 px-4 py-2.5 flex items-center justify-between cursor-pointer select-none hover:bg-gray-200 transition"
@@ -584,15 +625,15 @@ function qsRender() {
   // ── 内地（一级标题，内嵌二级区域） ──
   if (subRegions.length > 0) {
     const mainKey = 'geo_main';
-    const mainOpen = geoCollapseState[mainKey] === true;
+    const mainOpen = searching ? true : (geoCollapseState[mainKey] === true);
     const subHtml = subRegions.map(sub => {
       const subKey = 'geo_' + sub;
-      const subOpen = geoCollapseState[subKey] === true;
+      const subOpen = searching ? true : (geoCollapseState[subKey] === true);
       return `
         <div>
           <div class="flex items-center justify-between cursor-pointer select-none px-3 py-1.5 hover:bg-gray-50 transition"
                onclick="toggleGeo('${subKey}')">
-            <span class="text-xs font-medium text-gray-500">${sub}</span>
+            <span class="text-xs font-medium text-gray-500">${sub}（${geoGroups[sub].length}）</span>
             <span class="text-xs text-gray-400" id="chev-${subKey}">${subOpen ? '▲' : '▼'}</span>
           </div>
           <div id="body-${subKey}" class="${subOpen ? '' : 'hidden'} flex gap-2 flex-wrap px-3 py-2">
