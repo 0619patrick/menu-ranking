@@ -35,7 +35,7 @@ pip install -r requirements.txt
 python server.py
 ```
 
-打开浏览器访问 `http://localhost:5000`
+打开浏览器访问 `http://localhost:8090`
 
 ## 部署到 Render
 
