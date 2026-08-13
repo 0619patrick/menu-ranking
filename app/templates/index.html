@@ -190,12 +190,46 @@
     <summary class="px-6 py-4 cursor-pointer font-medium text-gray-700 hover:bg-gray-50 rounded-xl">
       使用說明
     </summary>
-    <div class="px-6 pb-6 text-sm text-gray-600 space-y-2">
-      <p><strong>1. 上傳什麼?</strong> 從 POS 系統匯出的銷量明細 Excel (.xlsx)，需包含「項目名稱」「分類」「數量」「金額」等列。</p>
-      <p><strong>2. 多家店?</strong> 點「再加一家店」可以同時處理多家店的數據，每家生成一個 sheet。</p>
-      <p><strong>3. 結果?</strong> 每家店一個 sheet，左邊是按菜單分類的堂食銷量(分組內按金額降序)，右邊是 KT/FP 外賣銷量(自取分上下半段)，底部是「堂食菜單外」項目。</p>
-      <p><strong>4. 合并項?</strong> 品名欄有 ▶ 的代表有多個 POS 寫法合并計算，點擊可展開查看各寫法的銷量明細。</p>
-      <p><strong>5. 隱私?</strong> 上傳的文件僅用於即時處理，不會保存在服務器上。</p>
+    <div class="px-6 pb-6 text-sm text-gray-600 space-y-3">
+      <div>
+        <p class="font-semibold text-gray-700">① 快速選店</p>
+        <ul class="list-disc ml-5 mt-1 space-y-1">
+          <li>頂部 Tab 先選品牌（天天 / 阿城鵝肉 / 四季芬芳 / 鮨政 / 泰菜），下方自動列出該品牌門店。</li>
+          <li>門店太多時，用「搜尋門店」框模糊搜索，輸入城市或商場名（如「深圳」「K11」「杭州 万象」）直接點選。</li>
+          <li>點門店按鈕 = 加入該店；再點一次 = 移除。可一次加入多家店。</li>
+        </ul>
+      </div>
+      <div>
+        <p class="font-semibold text-gray-700">② 上傳什麼？</p>
+        <ul class="list-disc ml-5 mt-1 space-y-1">
+          <li>從 POS 系統匯出的品項銷售明細 Excel (.xlsx)。</li>
+          <li>支持美团「品項銷售明細」及「已銷售」兩種格式；系統自動識別，退菜會按淨量淨額計算。</li>
+          <li>每家店卡片上傳對應文件；文件每次都需要重新選擇（瀏覽器無法記憶文件）。</li>
+        </ul>
+      </div>
+      <div>
+        <p class="font-semibold text-gray-700">③ 上次選的店會自動記住</p>
+        <ul class="list-disc ml-5 mt-1 space-y-1">
+          <li>頁面會記住你上次選的店鋪、餐廳、地區、月份，下次打開自動恢復（藍色提示條）。</li>
+          <li>想回到默認兩家店，點提示條上的「清除記憶，恢復默認」。</li>
+        </ul>
+      </div>
+      <div>
+        <p class="font-semibold text-gray-700">④ 生成預覽 & 結果</p>
+        <ul class="list-disc ml-5 mt-1 space-y-1">
+          <li>「生成預覽」先看每道菜的數量/金額，確認無誤再下載 Excel。</li>
+          <li>沒賣出的菜（數量 0 或負數的改單殘留）不會顯示，榜單更乾淨。</li>
+          <li>品名欄有 ▶ 的代表多個 POS 寫法已合併，點擊展開可看各寫法明細；誤合併可「拆回」。</li>
+          <li>行尾 × 可刪除該行（不算進總計，下載 Excel 也會排除），誤刪可「恢復」。</li>
+          <li>預覽分區：左邊堂食按菜單分類（組內金額降序）、「堂食菜單外」= POS 有賣但菜單未列、右邊外賣平台。</li>
+        </ul>
+      </div>
+      <div>
+        <p class="font-semibold text-gray-700">⑤ 隱私</p>
+        <ul class="list-disc ml-5 mt-1 space-y-1">
+          <li>上傳的文件僅用於即時處理，不會保存在服務器上。</li>
+        </ul>
+      </div>
     </div>
   </details>
 
